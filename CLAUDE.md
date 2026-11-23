@@ -37,6 +37,8 @@ swift test --enable-code-coverage
 swift format lint --strict --recursive Package.swift Sources Tests Examples tools
 swift format format --in-place --recursive Package.swift Sources Tests Examples tools
 swift tools/generate-sdk-tables.swift        # regenerate from the installed runtime
+swift tools/generate-async-engine.swift      # regenerate SzAsyncEngine's async mirror
+tools/tsan.sh                                # ThreadSanitizer, macOS, local only
 swift run example_load_truthset
 ```
 

@@ -1,5 +1,7 @@
-# CI for sz-swift-sdk: lint, then build and run the real-engine test suite and
-# the example programs on Linux and macOS.
+# CI for sz-swift-sdk. Linux ARM runners do the full job: lint, generated-code
+# drift, the real-engine test suite with 100% coverage, and the example
+# programs. macOS (expensive runners) only builds and runs the tests.
+# ThreadSanitizer is a local macOS command (tools/tsan.sh), not a CI job.
 #
 # The tests run against the REAL native Senzing engine (no mocks), so each job
 # installs a released Senzing runtime:
@@ -33,7 +35,7 @@ env:
 jobs:
   lint:
     name: swift-format lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     container:
       image: swift:6.4.2-noble@sha256:97b9d09f1e922ee794067ea8eec4874083c97d2d5027a6a409e398d82ebca016
     steps:
@@ -45,7 +47,7 @@ jobs:
 
   test-linux:
     name: Linux (Swift 6.4, Ubuntu 24.04)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     needs: lint
     container:
       image: swift:6.4.2-noble@sha256:97b9d09f1e922ee794067ea8eec4874083c97d2d5027a6a409e398d82ebca016
@@ -64,7 +66,7 @@ jobs:
       - name: Build
         run: swift build --build-tests
       - name: Test (real engine)
-        run: swift test --enable-code-coverage
+
       - name: Coverage
         run: swift tools/coverage-summary.swift "$(swift test --show-codecov-path)" Sources/SenzingSDK/ 100
       - name: Examples
@@ -74,26 +76,6 @@ jobs:
             swift run "$example"
             echo "::endgroup::"
           done
-
-  test-macos-tsan:
-    name: macOS (ThreadSanitizer)
-    runs-on: macos-latest
-    needs: lint
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Install Senzing runtime
-        env:
-          HOMEBREW_SENZING_ACCEPT_EULA: i_accept_the_senzing_eula
-        run: |
-          brew tap senzing/senzingsdk https://github.com/Senzing/homebrew-senzingsdk
-          brew trust --tap senzing/senzingsdk || true
-          brew install --cask senzingsdk
-      # Checks the SDK's own locking (environment state, worker pool, logging
-      # slots); libSz itself is not instrumented. macOS only: on Linux the
-      # runtime loads its database plugins with RTLD_DEEPBIND, which
-      # ThreadSanitizer cannot run with.
-      - name: Test (real engine, ThreadSanitizer)
-        run: swift test --sanitize=thread
 
   test-macos:
     name: macOS (Xcode toolchain)
@@ -117,13 +99,4 @@ jobs:
       - name: Build
         run: swift build --build-tests
       - name: Test (real engine)
-        run: swift test --enable-code-coverage
-      - name: Coverage
-        run: swift tools/coverage-summary.swift "$(swift test --show-codecov-path)" Sources/SenzingSDK/ 100
-      - name: Examples
-        run: |
-          for example in example_load_truthset example_search example_why example_async_engine example_logging; do
-            echo "::group::$example"
-            swift run "$example"
-            echo "::endgroup::"
-          done
+

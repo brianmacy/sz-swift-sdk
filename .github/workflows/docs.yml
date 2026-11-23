@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     container:
       image: swift:6.4.2-noble@sha256:97b9d09f1e922ee794067ea8eec4874083c97d2d5027a6a409e398d82ebca016
     steps:
@@ -67,7 +67,7 @@ jobs:
   deploy:
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
