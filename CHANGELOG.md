@@ -21,6 +21,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   engine settings from `SENZING_ENGINE_CONFIGURATION_JSON` instead of
   hard-coding paths; examples use ISO 8601 dates; the default flags are noted
   as a starting point, not production settings.
+- The concurrency guide states only what the SDK guarantees about call order,
+  not engine behavior under concurrent writes.
 
 ## [0.1.0] - 2026-11-23
 

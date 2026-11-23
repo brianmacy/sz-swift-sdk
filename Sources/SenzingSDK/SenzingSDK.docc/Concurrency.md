@@ -9,9 +9,10 @@ The Senzing engine is synchronous: each call blocks its thread until it
 finishes. It is also thread-safe, so one engine serves many threads at once,
 and the SDK's subsystems are `Sendable`.
 
-`Sendable` means an object is safe to share across threads. It does not make
-concurrent writes to the same record deterministic: Senzing applies the last
-one.
+`Sendable` means an object is safe to share across threads. It does not order
+calls: the SDK passes each call to the engine on the thread that made it, so
+when two threads write the same record, which call reaches the engine first is
+up to the threads.
 
 ## Which API should I use?
 
@@ -55,9 +56,9 @@ to bound per-thread memory on desktops and mobile devices. Raise it for server
 loads. More concurrency does not raise throughput on SQLite, which allows one
 writer at a time.
 
-Loading the same data concurrently can resolve entities and relationships
-slightly differently than loading it serially. That is expected engine
-behavior, not a bug.
+Workers take calls in submission order, but up to
+``SzAsyncEngine/maxConcurrentCalls`` run at once, so calls can finish in a
+different order. Await a call before submitting one that depends on it.
 
 ```swift
 let engine = SzAsyncEngine(try environment.getEngine())
