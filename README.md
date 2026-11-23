@@ -58,21 +58,52 @@ installer for the non-interactive acceptance setting.
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/brianmacy/sz-swift-sdk.git", branch: "main"),
+    .package(url: "https://github.com/brianmacy/sz-swift-sdk.git", from: "0.1.0"),
 ],
 targets: [
     .target(name: "MyApp", dependencies: [.product(name: "SenzingSDK", package: "sz-swift-sdk")]),
 ]
 ```
 
-`Package.swift` finds the installed runtime's headers and `libSz` in this
-order: `$SENZING_DIR` (the runtime's `er` directory), the Homebrew cask
-locations, then `/opt/senzing/er`. It embeds the library directory as an
-rpath, so programs run without `DYLD_LIBRARY_PATH` or `LD_LIBRARY_PATH`.
+SwiftPM finds the runtime's C headers and `libSz` through pkg-config, from a
+`senzing.pc` file. Senzing does not ship one; `tools/senzing-pkgconfig.sh`
+writes it for an installed runtime, into a directory SwiftPM always searches
+(`$(brew --prefix)/lib/pkgconfig` on macOS, `/usr/local/lib/pkgconfig` on
+Linux):
 
-Locating an installed library uses SwiftPM's unsafe build flags, which SwiftPM
-accepts for root packages and for branch, revision or local-path dependencies,
-but not for dependencies pinned to a version.
+```bash
+curl -fsSL https://raw.githubusercontent.com/brianmacy/sz-swift-sdk/0.1.0/tools/senzing-pkgconfig.sh | bash
+```
+
+It takes the runtime's `er` directory as an optional argument (default:
+`$SENZING_DIR`, the Homebrew cask, then `/opt/senzing/er`). The file it writes
+is short enough to write by hand:
+
+```text
+libdir=/opt/senzing/er/lib
+includedir=/opt/senzing/er/sdk/c
+
+Name: senzing
+Description: Senzing SDK runtime (C API and libSz)
+Version: 4.5.0
+Cflags: -I${includedir}
+Libs: -L${libdir} -lSz
+```
+
+At run time `libSz` must be found by the loader. A macOS app bundles it, or a
+command-line tool adds an rpath to the runtime's `lib` directory in its own
+target (allowed in a root package):
+
+```swift
+.executableTarget(
+    name: "MyTool",
+    dependencies: [.product(name: "SenzingSDK", package: "sz-swift-sdk")],
+    linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "/opt/homebrew/opt/senzing/er/lib"])]
+)
+```
+
+On Linux, set `LD_LIBRARY_PATH=/opt/senzing/er/lib` (as for every Senzing
+SDK) or add an rpath the same way.
 
 ## Quick start
 

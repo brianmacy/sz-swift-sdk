@@ -29,7 +29,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Senzing runtime
-        run: tools/ci/install-senzing-apt.sh
+        run: |
+          tools/ci/install-senzing-apt.sh
+          tools/senzing-pkgconfig.sh /opt/senzing/er
       - name: Symbol graph
         run: |
           swift build --target SenzingSDK \

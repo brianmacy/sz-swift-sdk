@@ -3,54 +3,49 @@
 // SenzingSDK: an unofficial, idiomatic Swift SDK over the Senzing V4 C API.
 //
 // The package binds the C headers and the `libSz` shared library of an
-// INSTALLED Senzing runtime. Nothing from the runtime is vendored here. The
-// runtime is located at manifest-evaluation time, in this order:
+// INSTALLED Senzing runtime; nothing from the runtime is vendored here. SwiftPM
+// finds them through pkg-config: a `senzing.pc` file, which
+// `tools/senzing-pkgconfig.sh` writes for an installed runtime. No unsafe build
+// flags are involved, so the package works as a version-pinned dependency.
 //
-//   1. `SENZING_DIR`: the runtime's `er` directory (the one that contains
-//      `lib/`, `sdk/c/` and `resources/`).
-//   2. The Homebrew cask locations (Apple silicon, then Intel), including the
-//      layout of the older unofficial Homebrew tap.
-//   3. The Linux package location, `/opt/senzing/er`.
-//
-// The native library's directory is embedded as an rpath, so programs and
-// tests run without `DYLD_LIBRARY_PATH` / `LD_LIBRARY_PATH`.
+// `libSz` is loaded through @rpath (macOS) or the library path (Linux): an app
+// bundles it or adds an rpath to the runtime's `lib` directory; see README.md.
+// This repository's own tests and examples embed that rpath themselves.
 
 import Foundation
 import PackageDescription
 
-/// Returns the Senzing runtime's `er` directory.
-func senzingRuntimeDirectory() -> String {
+/// The Senzing runtime's `lib` directory, for the rpath of this repository's
+/// tests and examples: the `libdir` of the `senzing.pc` SwiftPM would find,
+/// else `$SENZING_DIR/lib`, else the platform default.
+func senzingLibraryDirectory() -> String {
     let environment = ProcessInfo.processInfo.environment
+    let searchPath =
+        (environment["PKG_CONFIG_PATH"] ?? "").split(separator: ":").map(String.init) + [
+            "/opt/homebrew/lib/pkgconfig", "/usr/local/lib/pkgconfig", "/usr/local/share/pkgconfig",
+            "/usr/lib/pkgconfig", "/usr/share/pkgconfig",
+        ]
+    for directory in searchPath {
+        guard let text = try? String(contentsOfFile: "\(directory)/senzing.pc", encoding: .utf8) else {
+            continue
+        }
+        for line in text.split(separator: "\n") where line.hasPrefix("libdir=") {
+            return String(line.dropFirst("libdir=".count))
+        }
+    }
     if let explicit = environment["SENZING_DIR"], !explicit.isEmpty {
-        return explicit
+        return "\(explicit)/lib"
     }
-    let candidates = [
-        "/opt/homebrew/opt/senzing/er",
-        "/usr/local/opt/senzing/er",
-        "/opt/homebrew/opt/senzing/runtime/er",
-        "/usr/local/opt/senzing/runtime/er",
-        "/opt/senzing/er",
-    ]
-    let found = candidates.first {
-        FileManager.default.fileExists(atPath: "\($0)/sdk/c/libSz.h")
-    }
-    return found ?? "/opt/senzing/er"
+    return FileManager.default.fileExists(atPath: "/opt/homebrew/opt/senzing/er/lib")
+        ? "/opt/homebrew/opt/senzing/er/lib" : "/opt/senzing/er/lib"
 }
 
-let senzingDirectory = senzingRuntimeDirectory()
-let senzingHeaders = "\(senzingDirectory)/sdk/c"
-let senzingLibraries = "\(senzingDirectory)/lib"
-
-let nativePlatforms: [Platform] = [.macOS, .linux]
-
-let senzingSwiftSettings: [SwiftSetting] = [
-    .unsafeFlags(["-Xcc", "-I\(senzingHeaders)"], .when(platforms: nativePlatforms))
-]
-
-let senzingLinkerSettings: [LinkerSetting] = [
+/// The rpath for this repository's tests and examples. Unsafe flags are allowed
+/// here because these targets are not part of the `SenzingSDK` product.
+let runtimeSearchPath: [LinkerSetting] = [
     .unsafeFlags(
-        ["-L\(senzingLibraries)", "-Xlinker", "-rpath", "-Xlinker", senzingLibraries],
-        .when(platforms: nativePlatforms)
+        ["-Xlinker", "-rpath", "-Xlinker", senzingLibraryDirectory()],
+        .when(platforms: [.macOS, .linux])
     )
 ]
 
@@ -67,56 +62,54 @@ let package = Package(
         // The module map over the installed Senzing C headers.
         .systemLibrary(
             name: "CSenzing",
-            path: "Sources/CSenzing"
+            path: "Sources/CSenzing",
+            pkgConfig: "senzing"
         ),
         .target(
             name: "SenzingSDK",
-            dependencies: ["CSenzing"],
-            swiftSettings: senzingSwiftSettings,
-            linkerSettings: senzingLinkerSettings
+            dependencies: ["CSenzing"]
         ),
         .target(
             name: "SenzingTestSupport",
             dependencies: ["SenzingSDK"],
             path: "Tests/SenzingTestSupport",
             exclude: ["Resources/truthset/README.md"],
-            resources: [.copy("Resources/truthset")],
-            swiftSettings: senzingSwiftSettings
+            resources: [.copy("Resources/truthset")]
         ),
         .testTarget(
             name: "SenzingSDKTests",
             dependencies: ["SenzingSDK", "SenzingTestSupport"],
-            swiftSettings: senzingSwiftSettings
+            linkerSettings: runtimeSearchPath
         ),
         .executableTarget(
             name: "example_load_truthset",
             dependencies: ["SenzingSDK", "SenzingTestSupport"],
             path: "Examples/LoadTruthset",
-            swiftSettings: senzingSwiftSettings
+            linkerSettings: runtimeSearchPath
         ),
         .executableTarget(
             name: "example_search",
             dependencies: ["SenzingSDK", "SenzingTestSupport"],
             path: "Examples/Search",
-            swiftSettings: senzingSwiftSettings
+            linkerSettings: runtimeSearchPath
         ),
         .executableTarget(
             name: "example_why",
             dependencies: ["SenzingSDK", "SenzingTestSupport"],
             path: "Examples/Why",
-            swiftSettings: senzingSwiftSettings
+            linkerSettings: runtimeSearchPath
         ),
         .executableTarget(
             name: "example_async_engine",
             dependencies: ["SenzingSDK", "SenzingTestSupport"],
             path: "Examples/AsyncEngine",
-            swiftSettings: senzingSwiftSettings
+            linkerSettings: runtimeSearchPath
         ),
         .executableTarget(
             name: "example_logging",
             dependencies: ["SenzingSDK", "SenzingTestSupport"],
             path: "Examples/Logging",
-            swiftSettings: senzingSwiftSettings
+            linkerSettings: runtimeSearchPath
         ),
     ],
     swiftLanguageModes: [.v6]

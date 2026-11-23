@@ -27,12 +27,14 @@ sudo apt-get install -y senzingsdk-runtime senzingsdk-setup sqlite3
 ## Add the package
 
 ```swift
-.package(url: "https://github.com/brianmacy/sz-swift-sdk.git", branch: "main")
+.package(url: "https://github.com/brianmacy/sz-swift-sdk.git", from: "0.1.0")
 ```
 
-The manifest looks for the runtime in `$SENZING_DIR` (the runtime's `er`
-directory), then the Homebrew cask locations, then `/opt/senzing/er`, and
-embeds the library directory as an rpath.
+SwiftPM finds the runtime's C headers and `libSz` through pkg-config. Write a
+`senzing.pc` for the installed runtime with the repository's
+`tools/senzing-pkgconfig.sh`. At run time, `libSz` must be found by the
+loader: bundle it in an app, add an rpath to the runtime's `lib` directory, or
+on Linux set `LD_LIBRARY_PATH`. The README has the details.
 
 ## Create a repository
 

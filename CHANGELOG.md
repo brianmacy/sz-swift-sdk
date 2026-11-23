@@ -6,12 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-11-23
+
+First release. Requires Senzing 4.5 or later, installed separately.
+
 ### Added
 
+- Version-pinned SwiftPM dependency (`from: "0.1.0"`): the package finds the
+  runtime's C headers and `libSz` through pkg-config (`senzing.pc`, written by
+  `tools/senzing-pkgconfig.sh`), with no unsafe build flags in the `SenzingSDK`
+  product. Apps bundle `libSz` or add an rpath to the runtime's `lib`
+  directory; on Linux, `LD_LIBRARY_PATH` also works.
 - SwiftPM package `SenzingSDK` over the Senzing V4 C API of an installed
   runtime (Senzing 4.5 or later): a `CSenzing` module map over the runtime's C
-  headers, located through `$SENZING_DIR`, the Homebrew cask locations or
-  `/opt/senzing/er`, with an rpath to `libSz`.
+  headers; nothing from the runtime is vendored.
 - The C# SDK object model: `SzEnvironment`/`SzCoreEnvironment` (initializer and
   builder; one active environment per process), `SzEngine`, `SzConfigManager`,
   `SzConfig`, `SzDiagnostic`, `SzProduct`, as protocols with native-backed
@@ -56,3 +64,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `example_async_engine`.
 - DocC documentation published to GitHub Pages; CI on macOS and Linux;
   swift-format lint; CodeQL and dependency review.
+
+[Unreleased]: https://github.com/brianmacy/sz-swift-sdk/compare/0.1.0...HEAD
+[0.1.0]: https://github.com/brianmacy/sz-swift-sdk/releases/tag/0.1.0

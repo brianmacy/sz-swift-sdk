@@ -14,7 +14,7 @@ Senzing features, or private build information.
 
 | Path | Contents |
 |---|---|
-| `Package.swift` | Locates the installed runtime (`SENZING_DIR`, Homebrew cask, `/opt/senzing/er`); `-I` to its C headers, `-L` and rpath to `libSz`. |
+| `Package.swift` | `CSenzing` finds the runtime through pkg-config (`senzing.pc`, from `tools/senzing-pkgconfig.sh`): no unsafe flags in the `SenzingSDK` product. Tests and examples alone add an rpath (unsafe flags) to `libSz`. |
 | `Sources/CSenzing` | Module map + umbrella header over the runtime's C headers (nothing vendored). |
 | `Sources/SenzingSDK/*.swift` | Public protocols (`SzEnvironment`, `SzEngine`, ...), `SzError`, `SzFlags`, defaults, typed and async APIs. |
 | `Sources/SenzingSDK/Core` | `SzCore*` classes over the C API. |
@@ -42,7 +42,8 @@ tools/tsan.sh                                # ThreadSanitizer, macOS, local onl
 swift run example_load_truthset
 ```
 
-Set `SENZING_DIR` to build against a runtime other than the default location.
+Run `tools/senzing-pkgconfig.sh [er-dir]` once per runtime (writes `senzing.pc`). Set `SENZING_DIR` so the test support finds the same runtime's resources.
+Never add unsafe flags to `CSenzing` or `SenzingSDK`: they would break version-pinned dependencies.
 
 ## Rules
 
