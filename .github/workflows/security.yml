@@ -1,7 +1,8 @@
 # Security checks:
-#   * CodeQL static analysis of the Swift sources (built against the installed
-#     Senzing runtime on Linux ARM, with a Swift toolchain CodeQL supports:
-#     CodeQL does not support Swift 6.4) and of the workflow files.
+#   * CodeQL static analysis of the Swift sources, built against the installed
+#     Senzing runtime. CodeQL analyzes Swift only on macOS runners, which are
+#     expensive, so this job runs weekly and on demand, not on every push.
+#   * CodeQL analysis of the workflow files, on Linux ARM, on every push.
 #   * Dependency review of pull requests. The package has no SwiftPM
 #     dependencies; this keeps it that way visibly.
 name: Security
@@ -22,22 +23,29 @@ permissions:
 jobs:
   codeql-swift:
     name: CodeQL (Swift)
-    runs-on: ubuntu-24.04-arm
-    container:
-      image: swift:6.3.2-noble@sha256:c4336909a71b2e69b884f4078cdf98c0cd081911632cb349ef72abc4cbed69fc
+    # CodeQL: "Swift analysis is only supported on macOS runner images."
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
     permissions:
       contents: read
       security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Senzing runtime
-        run: tools/ci/install-senzing-apt.sh
+        env:
+          HOMEBREW_SENZING_ACCEPT_EULA: i_accept_the_senzing_eula
+        run: |
+          brew tap senzing/senzingsdk https://github.com/Senzing/homebrew-senzingsdk
+          brew trust --tap senzing/senzingsdk || true
+          brew install --cask senzingsdk
       - uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           languages: swift
           build-mode: manual
       - name: Build
-        run: swift build --build-tests
+        # Under the CodeQL build tracer, swift build defaults to x86_64; the
+        # Senzing cask ships an arm64-only libSz, so build for arm64 explicitly.
+        run: swift build --build-tests --triple arm64-apple-macosx15.0
       - uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           category: /language:swift

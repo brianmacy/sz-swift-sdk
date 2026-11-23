@@ -222,8 +222,9 @@ swift tools/generate-sdk-tables.swift
 CI regenerates them against the installed runtime and fails on any drift.
 
 CI runs lint, the full Linux suite (tests, 100% coverage, examples, generated
-code drift), DocC and CodeQL on Linux ARM runners; macOS CI only builds and
-runs the tests. ThreadSanitizer runs locally with `tools/tsan.sh` on macOS: on
+code drift), DocC and CodeQL for the workflows on Linux ARM runners; macOS CI
+only builds and runs the tests. CodeQL for the Swift sources needs macOS, so it
+runs weekly and on demand. ThreadSanitizer runs locally with `tools/tsan.sh` on macOS: on
 Linux the Senzing runtime loads its database plugins with `RTLD_DEEPBIND`,
 which ThreadSanitizer cannot run with.
 
