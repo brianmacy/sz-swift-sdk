@@ -104,21 +104,23 @@ public final class SzAsyncEngine: Sendable {
     public func perform<T: Sendable>(
         _ operation: @escaping @Sendable (any SzEngine) throws -> T
     ) async throws -> T {
-        // An already-cancelled task runs onCancel before the operation, so
-        // its job is abandoned before a worker can claim it.
         let engine = self.engine
-        let reply = Reply<T>()
-        let job = EngineJob(
-            work: { reply.deliver(Result { try operation(engine) }) },
-            abandon: { reply.deliver(.failure($0)) }
-        )
+        let slot = JobSlot()
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                reply.wait(with: continuation)
+                let job = EngineJob(
+                    work: { continuation.resume(with: Result { try operation(engine) }) },
+                    abandon: { continuation.resume(throwing: $0) }
+                )
+                // onCancel may run before or after this point: either it finds
+                // the job here, or the job sees the cancellation itself.
+                if slot.install(job) || Task.isCancelled {
+                    job.cancel()
+                }
                 workers.submit(job)
             }
         } onCancel: {
-            job.cancel()
+            slot.cancel()
         }
     }
 
@@ -139,37 +141,29 @@ public final class SzAsyncEngine: Sendable {
     static let shutdownError = SzError(.general, message: "The SzAsyncEngine has been shut down.")
 }
 
-/// Delivers a call's result to its continuation, whichever arrives first.
-private final class Reply<T: Sendable>: Sendable {
-    private enum State {
-        case empty
-        case waiting(CheckedContinuation<T, any Error>)
-        case delivered(Result<T, any Error>)
+/// Connects a task's cancellation handler to its queued job.
+private final class JobSlot: Sendable {
+    private struct State {
+        var job: EngineJob?
+        var cancelled = false
     }
 
-    private let state = Mutex(State.empty)
+    private let state = Mutex(State())
 
-    func wait(with continuation: CheckedContinuation<T, any Error>) {
-        let early = state.withLock { state -> Result<T, any Error>? in
-            guard case .delivered(let result) = state else {
-                state = .waiting(continuation)
-                return nil
-            }
-            return result
-        }
-        if let early {
-            continuation.resume(with: early)
+    /// Records the job; returns whether the task was already cancelled.
+    func install(_ job: EngineJob) -> Bool {
+        state.withLock { state in
+            state.job = job
+            return state.cancelled
         }
     }
 
-    func deliver(_ result: Result<T, any Error>) {
-        let continuation = state.withLock { state -> CheckedContinuation<T, any Error>? in
-            guard case .waiting(let continuation) = state else {
-                state = .delivered(result)
-                return nil
-            }
-            return continuation
+    /// Cancels the job if it is installed (and still waiting for a worker).
+    func cancel() {
+        let job = state.withLock { state in
+            state.cancelled = true
+            return state.job
         }
-        continuation?.resume(with: result)
+        job?.cancel()
     }
 }

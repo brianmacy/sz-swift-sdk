@@ -77,6 +77,7 @@ separate Senzing installation, which has its own license terms.
 
 - ``SzRecordKey``
 - ``SzExportHandle``
+- ``SzInternalID``
 
 ### Implementations
 

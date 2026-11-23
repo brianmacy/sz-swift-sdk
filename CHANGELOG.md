@@ -25,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `SzSearchResponse`, `SzWhyResponse`, `SzWithInfoResponse`, `SzVersionInfo`,
   `SzLicenseInfo`, `SzConfigRegistry`, `SzDataSourceRegistry`), `as:` variants
   of the common calls, and `addRecord` for any `Encodable` record.
+- `SzInternalID` for `INTERNAL_ID` / `INTERNAL_ID_2` in the models: decodes the
+  integer or the string form the engine reports, and encodes it back as read.
 - `SzLogging` over the `libSzLogging.h` C API, following the Senzing C++ and
   Rust SDKs: `environment.getLogging()` / `SzCoreLogging.getInstance()`,
   process-wide callbacks (`registerCallback`, released or `unregister()`ed

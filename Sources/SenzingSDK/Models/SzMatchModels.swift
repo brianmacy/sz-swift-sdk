@@ -120,12 +120,12 @@ public struct SzWhyResponse: Codable, Hashable, Sendable {
 
 /// One why explanation, between one side and (for two-sided whys) another.
 public struct SzWhyResult: Codable, Hashable, Sendable {
-    public var internalID: Int64?
+    public var internalID: SzInternalID?
     /// The entity of the first side.
     public var entityID: Int64
     /// The records of the first side.
     public var focusRecords: [SzRecordKey]?
-    public var internalID2: Int64?
+    public var internalID2: SzInternalID?
     /// The entity of the second side (two-sided whys).
     public var entityID2: Int64?
     /// The records of the second side (two-sided whys).

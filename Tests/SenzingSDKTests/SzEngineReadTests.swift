@@ -35,6 +35,8 @@ extension EngineTests {
             let entityID = try fixture.entityID("CUSTOMERS", "1001")
             let byID = try engine.getEntity(entityID, as: SzEntityResponse.self)
             #expect(byID.resolvedEntity.entityID == entityID)
+            let internalIDs = try #require(byID.resolvedEntity.records).compactMap(\.internalID)
+            #expect(!internalIDs.isEmpty && internalIDs.allSatisfy { $0.intValue != nil }, "integer IDs")
             let raw = try engine.getEntity(entityID)
             #expect(raw.contains("RESOLVED_ENTITY"))
             let brief = try engine.getEntity(entityID, flags: [], as: SzEntityResponse.self)

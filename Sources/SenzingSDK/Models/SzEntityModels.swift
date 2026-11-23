@@ -93,7 +93,7 @@ public struct SzEntityRecord: Codable, Hashable, Sendable {
     /// The record ID.
     public var recordID: String
     /// The engine's internal ID for the record's observation.
-    public var internalID: Int64?
+    public var internalID: SzInternalID?
     /// The match key, for example `+NAME+DOB+PHONE` (empty for the first record).
     public var matchKey: String?
     /// The match level, for example `RESOLVED` (empty for the first record).
