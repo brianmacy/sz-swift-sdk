@@ -1,4 +1,8 @@
+#if canImport(Sz)
+import Sz
+#else
 import CSenzing
+#endif
 
 /// The native Senzing modules; each keeps its own last-exception state.
 enum NativeComponent: Sendable {

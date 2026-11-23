@@ -1,4 +1,8 @@
+#if canImport(Sz)
+import Sz
+#else
 import CSenzing
+#endif
 
 /// The ``SzConfigManager`` over the native engine, mirroring the C#
 /// `SzCoreConfigManager`.

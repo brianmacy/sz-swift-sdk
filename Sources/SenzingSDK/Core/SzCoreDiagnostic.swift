@@ -1,4 +1,8 @@
+#if canImport(Sz)
+import Sz
+#else
 import CSenzing
+#endif
 
 /// The ``SzDiagnostic`` over the native engine, mirroring the C# `SzCoreDiagnostic`.
 public final class SzCoreDiagnostic: SzDiagnostic {

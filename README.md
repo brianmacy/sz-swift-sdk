@@ -30,7 +30,7 @@ package binds its stable C API.
 | Senzing | 4.5 or later, installed separately |
 | macOS | 15 or later, Apple silicon (the Senzing Homebrew cask) |
 | Linux | x86-64 or arm64 with the Senzing apt packages (CI: Ubuntu 24.04) |
-| iOS | Not yet: see [iOS](#ios) |
+| iOS | 18 or later, with a Senzing `Sz.xcframework` you provide: see [iOS](#ios) |
 
 ## Install Senzing
 
@@ -273,9 +273,24 @@ which ThreadSanitizer cannot run with.
 
 ## iOS
 
-The package declares iOS as a platform so an app can depend on it, but
-building for iOS needs a separately built static Senzing library that is not
-available yet.
+Building for iOS needs a Senzing `Sz.xcframework` (a dynamic `Sz.framework`
+with the C API headers and module `Sz`), which this repository does not
+provide. Link yours into a local checkout, then depend on the package by path:
+
+```bash
+tools/link-ios-framework.sh /path/to/Sz.xcframework
+```
+
+```swift
+.package(path: "../sz-swift-sdk")
+```
+
+The link, `Frameworks/Sz.xcframework`, is git-ignored. With it present the
+package links that framework on iOS and still uses the installed runtime on
+macOS and Linux. SwiftPM caches the manifest, so after adding or removing the
+link run `swift package reset` (in Xcode: File > Packages > Reset Package
+Caches). The app embeds and signs `Sz.framework`, and passes engine
+settings whose paths point inside the app bundle.
 
 ## License
 

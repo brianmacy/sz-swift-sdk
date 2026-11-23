@@ -1,3 +1,6 @@
+# The iOS Senzing framework, linked by tools/link-ios-framework.sh
+Frameworks/
+
 # SwiftPM / Xcode
 .build/
 .swiftpm/

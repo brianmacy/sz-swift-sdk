@@ -1,6 +1,11 @@
-import CSenzing
 import Foundation
 import Synchronization
+
+#if canImport(Sz)
+import Sz
+#else
+import CSenzing
+#endif
 
 /// The ``SzLogging`` over the native `libSzLogging` API, mirroring the C#
 /// `SzCoreLogging`.

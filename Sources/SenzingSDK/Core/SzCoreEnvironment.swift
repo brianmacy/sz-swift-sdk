@@ -1,5 +1,10 @@
-import CSenzing
 import Foundation
+
+#if canImport(Sz)
+import Sz
+#else
+import CSenzing
+#endif
 
 /// The ``SzEnvironment`` over the native Senzing engine, mirroring the C#
 /// `SzCoreEnvironment`.

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- iOS builds against a Senzing `Sz.xcframework` you provide, linked into a
+  local checkout with `tools/link-ios-framework.sh`.
+
 ### Changed
 
 - `SzAsyncEngine.processRedoRecords()` returns an `SzRedoReport` instead of a

@@ -11,6 +11,11 @@
 // `libSz` is loaded through @rpath (macOS) or the library path (Linux): an app
 // bundles it or adds an rpath to the runtime's `lib` directory; see README.md.
 // This repository's own tests and examples embed that rpath themselves.
+//
+// iOS: the package links a Senzing `Sz.xcframework` that you provide, through
+// the symlink `Frameworks/Sz.xcframework` (git-ignored), which
+// `tools/link-ios-framework.sh` creates. Without it the package does not build
+// for iOS; macOS and Linux are unaffected.
 
 import Foundation
 import PackageDescription
@@ -49,6 +54,23 @@ let runtimeSearchPath: [LinkerSetting] = [
     )
 ]
 
+/// The iOS Senzing framework, when `tools/link-ios-framework.sh` has linked one
+/// into this checkout.
+let iosFramework = "Frameworks/Sz.xcframework"
+let hasIOSFramework = FileManager.default.fileExists(
+    atPath: URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(iosFramework).path
+)
+
+/// The C API: the installed runtime through pkg-config on macOS and Linux, the
+/// linked framework on iOS.
+let cAPI: [Target.Dependency] =
+    hasIOSFramework
+    ? [
+        .target(name: "CSenzing", condition: .when(platforms: [.macOS, .linux])),
+        .target(name: "Sz", condition: .when(platforms: [.iOS])),
+    ]
+    : ["CSenzing"]
+
 let package = Package(
     name: "SenzingSDK",
     platforms: [
@@ -67,7 +89,7 @@ let package = Package(
         ),
         .target(
             name: "SenzingSDK",
-            dependencies: ["CSenzing"]
+            dependencies: cAPI
         ),
         .target(
             name: "SenzingTestSupport",
@@ -111,6 +133,6 @@ let package = Package(
             path: "Examples/Logging",
             linkerSettings: runtimeSearchPath
         ),
-    ],
+    ] + (hasIOSFramework ? [.binaryTarget(name: "Sz", path: iosFramework)] : []),
     swiftLanguageModes: [.v6]
 )

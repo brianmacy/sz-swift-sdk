@@ -1,4 +1,8 @@
+#if canImport(Sz)
+import Sz
+#else
 import CSenzing
+#endif
 
 /// The ``SzProduct`` over the native engine, mirroring the C# `SzCoreProduct`.
 public final class SzCoreProduct: SzProduct {
