@@ -93,8 +93,17 @@ public final class SzCoreEnvironment: SzEnvironment, @unchecked Sendable {
     /// Returns the active environment, if any (C# `GetActiveInstance`).
     ///
     /// Returns `nil` once the active environment is destroyed or released.
+    /// While a ``destroy()`` is in progress, waits for it to finish and then
+    /// returns `nil`, as the official SDKs do.
     public static func getActiveInstance() -> SzCoreEnvironment? {
-        activeInstance.withLock { $0?.environment }
+        guard let environment = activeInstance.withLock({ $0?.environment }) else {
+            return nil
+        }
+        if environment.state.isDestroyBegun {
+            environment.state.waitForDestroy()
+            return nil
+        }
+        return environment
     }
 
     /// The configuration the subsystems use: the ID given at creation or to

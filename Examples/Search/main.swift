@@ -25,7 +25,7 @@ func run() throws {
     let engine = try environment.getEngine()
     try repository.loadTruthset(into: engine)
 
-    let query = SearchAttributes(name: "Robert Smith", dateOfBirth: "12/11/1978")
+    let query = SearchAttributes(name: "Robert Smith", dateOfBirth: "1978-12-11")
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
     let json = String(decoding: try encoder.encode(query), as: UTF8.self)

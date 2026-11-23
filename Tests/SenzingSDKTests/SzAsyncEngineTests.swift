@@ -99,7 +99,7 @@ extension EngineTests {
                 }
                 try await group.waitForAll()
             }
-            #expect(try await engine.processRedoRecords() >= 0)
+            #expect(try await engine.processRedoRecords().failed.isEmpty)
             let entity = try await engine.getEntity(
                 dataSourceCode: "CUSTOMERS", recordID: "1001", as: SzEntityResponse.self)
             let keys = Set(try #require(entity.resolvedEntity.records).map(\.recordKey))
@@ -121,8 +121,26 @@ extension EngineTests {
             let pending = try fixture.engine.countRedoRecords()
             #expect(pending > 0, "a serial truth-set load leaves redo records")
             let engine = SzAsyncEngine(fixture.engine)
-            #expect(try await engine.processRedoRecords() >= Int(pending))
+            let report = try await engine.processRedoRecords()
+            #expect(report.processed >= Int(pending) && report.failed.isEmpty)
             #expect(try fixture.engine.countRedoRecords() == 0)
+        }
+
+        @Test("test_redoFailures: a redo record that fails is reported and the drain continues")
+        func test_redoFailures() throws {
+            let fixture = try EngineFixture()
+            let engine = fixture.engine
+            // Real engine calls on malformed redo records: each fails, and the
+            // drain keeps going until the queue is empty.
+            var queue = ["{bad", "[1", "{bad"]
+            let report = try SzRedoReport.drain(
+                next: { () throws(SzError) -> String? in queue.isEmpty ? nil : queue.removeFirst() },
+                process: { redo throws(SzError) in _ = try engine.processRedoRecord(redo) }
+            )
+            #expect(queue.isEmpty)
+            #expect(report.processed == 0)
+            #expect(report.failed.map(\.redoRecord) == ["{bad", "[1", "{bad"])
+            #expect(report.failed.allSatisfy { $0.error.isKind(of: .badInput) }, "\(report.failed)")
         }
 
         @Test("test_records: every async record method matches the engine")

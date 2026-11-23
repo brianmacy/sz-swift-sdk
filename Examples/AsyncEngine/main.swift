@@ -44,7 +44,10 @@ func run() async throws {
         }
         try await group.waitForAll()
     }
-    try await engine.processRedoRecords()
+    let redo = try await engine.processRedoRecords()
+    for failure in redo.failed {
+        print("Redo record failed: \(failure.error)")
+    }
 
     var groups: [Int64: [String]] = [:]
     for contact in contacts {

@@ -97,7 +97,36 @@ extension EngineTests {
             }
             environment.destroy()
             group.wait()
-            #expect(outcomes.withLock { $0 } == Array(repeating: SzErrorKind.environmentDestroyed.rawValue, count: 8))
+            let observed = outcomes.withLock { $0 }
+            #expect(observed == Array(repeating: SzErrorKind.environmentDestroyed.rawValue, count: 8), "\(observed)")
+        }
+
+        @Test("test_getActiveInstance waits for a destroy() in progress, then returns nil")
+        func test_activeInstanceDuringDestroy() async throws {
+            let fixture = try EngineFixture()
+            let environment = fixture.environment
+            #expect(SzCoreEnvironment.getActiveInstance() === environment)
+            let engine = SzAsyncEngine(fixture.engine, maxConcurrentCalls: 1)
+            let gate = Gate()
+            let running = Task { try await engine.perform { _ in gate.hold() } }
+            await gate.waitUntilHeld()
+            // destroy() joins the held worker, so it stays in progress.
+            Thread { environment.destroy() }.start()
+            try await eventually { engine.isShutDown }
+            let answered = Counter()
+            let result = Mutex<SzCoreEnvironment?>(nil)
+            Thread {
+                let active = SzCoreEnvironment.getActiveInstance()
+                result.withLock { $0 = active }
+                answered.increment()
+            }.start()
+            try await Task.sleep(for: .milliseconds(200))
+            #expect(answered.count == 0, "waits while destroy() runs")
+            gate.open()
+            try await running.value
+            try await eventually { answered.count == 1 }
+            #expect(result.withLock { $0 } == nil)
+            #expect(environment.isDestroyed)
         }
 
         @Test("test_reentrancy: an SDK call from a log callback during an SDK call fails instead of deadlocking")

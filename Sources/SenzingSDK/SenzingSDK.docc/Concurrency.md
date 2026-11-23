@@ -70,8 +70,15 @@ try await withThrowingTaskGroup(of: Void.self) { group in
     }
     try await group.waitForAll()
 }
-try await engine.processRedoRecords()
+let redo = try await engine.processRedoRecords()
+for failure in redo.failed where failure.error.isRetryable {
+    _ = try await engine.processRedoRecord(failure.redoRecord)
+}
 ```
+
+``SzAsyncEngine/processRedoRecords()`` returns an ``SzRedoReport``. Fetching a
+redo record removes it from the queue, so a record that fails to process is
+returned in ``SzRedoReport/failed`` with its error instead of being lost.
 
 Every ``SzEngine`` method has an `async` counterpart. Anything else runs on a
 worker through ``SzAsyncEngine/perform(_:)``:

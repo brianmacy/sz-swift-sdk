@@ -11,6 +11,7 @@ On macOS (Apple silicon), install the Homebrew cask:
 
 ```bash
 brew tap senzing/senzingsdk https://github.com/Senzing/homebrew-senzingsdk
+brew trust --tap senzing/senzingsdk
 brew install --cask senzingsdk
 ```
 
@@ -49,10 +50,10 @@ sqlite3 /tmp/G2C.db < /opt/senzing/er/resources/schema/szcore-schema-sqlite-crea
 Then register a default configuration with the data sources you will load:
 
 ```swift
-let settings = """
-    {"PIPELINE":{"CONFIGPATH":"/etc/opt/senzing","RESOURCEPATH":"/opt/senzing/er/resources",
-     "SUPPORTPATH":"/opt/senzing/data"},"SQL":{"CONNECTION":"sqlite3://na:na@/tmp/G2C.db"}}
-    """
+// The engine settings, from SENZING_ENGINE_CONFIGURATION_JSON. On Linux:
+// {"PIPELINE":{"CONFIGPATH":"/etc/opt/senzing","RESOURCEPATH":"/opt/senzing/er/resources",
+//  "SUPPORTPATH":"/opt/senzing/data"},"SQL":{"CONNECTION":"sqlite3://na:na@/tmp/G2C.db"}}
+let settings = ProcessInfo.processInfo.environment["SENZING_ENGINE_CONFIGURATION_JSON"] ?? ""
 let setup = try SzCoreEnvironment(instanceName: "setup", settings: settings)
 let configManager = try setup.getConfigManager()
 let config = try configManager.createConfig()
@@ -61,8 +62,9 @@ try configManager.setDefaultConfig(configDefinition: config.export())
 setup.destroy()
 ```
 
-On macOS with the Homebrew cask, the paths are under
-`/opt/homebrew/opt/senzing`: `er/resources`, `data`, and `er/etc` for
+Read the settings from the environment rather than writing them into code. On
+macOS with the Homebrew cask, the paths are under
+`$(brew --prefix)/opt/senzing`: `er/resources`, `data`, and `er/etc` for
 `CONFIGPATH`.
 
 ## Resolve records
@@ -75,7 +77,7 @@ let engine = try environment.getEngine()
 try engine.addRecord(
     dataSourceCode: "CUSTOMERS",
     recordID: "1001",
-    recordDefinition: #"{"NAME_FULL":"Robert Smith","DATE_OF_BIRTH":"12/11/1978"}"#
+    recordDefinition: #"{"NAME_FULL":"Robert Smith","DATE_OF_BIRTH":"1978-12-11"}"#
 )
 
 let entity = try engine.getEntity(dataSourceCode: "CUSTOMERS", recordID: "1001", as: SzEntityResponse.self)
@@ -111,7 +113,9 @@ print(why.whyResults.first?.matchInfo.whyKey ?? "")
 
 Every method also returns the engine's raw JSON when called without `as:`.
 Pass ``SzFlags`` to control what the engine returns; each method defaults to
-its own `...DefaultFlags`.
+its own `...DefaultFlags`. Those defaults are for getting started: their
+members can change between Senzing versions, so production code should pass
+the flags it needs.
 
 ## iOS
 

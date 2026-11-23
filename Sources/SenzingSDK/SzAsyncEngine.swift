@@ -124,17 +124,19 @@ public final class SzAsyncEngine: Sendable {
         }
     }
 
-    /// Processes pending redo records, on one worker, until none remain;
-    /// returns how many ran.
+    /// Processes pending redo records, on one worker, until none remain.
+    ///
+    /// `getRedoRecord` dequeues each record, so one that fails to process is
+    /// not lost: it is returned in ``SzRedoReport/failed`` with its error, and
+    /// the drain continues. Retry those whose error ``SzError/isRetryable``.
+    ///
+    /// - Throws: An ``SzError`` if fetching the next redo record fails.
     @discardableResult
-    public func processRedoRecords() async throws -> Int {
+    public func processRedoRecords() async throws -> SzRedoReport {
         try await perform { engine in
-            var processed = 0
-            while let redo = try engine.getRedoRecord() {
-                try engine.processRedoRecord(redo, flags: [])
-                processed += 1
+            try SzRedoReport.drain(next: engine.getRedoRecord) { redo throws(SzError) in
+                _ = try engine.processRedoRecord(redo, flags: [])
             }
-            return processed
         }
     }
 

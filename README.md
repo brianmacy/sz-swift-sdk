@@ -38,6 +38,7 @@ package binds its stable C API.
 
 ```bash
 brew tap senzing/senzingsdk https://github.com/Senzing/homebrew-senzingsdk
+brew trust --tap senzing/senzingsdk
 brew install --cask senzingsdk
 ```
 
@@ -98,7 +99,8 @@ target (allowed in a root package):
 .executableTarget(
     name: "MyTool",
     dependencies: [.product(name: "SenzingSDK", package: "sz-swift-sdk")],
-    linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "/opt/homebrew/opt/senzing/er/lib"])]
+    // The runtime's lib directory: on macOS, $(brew --prefix)/opt/senzing/er/lib.
+    linkerSettings: [.unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "<runtime>/er/lib"])]
 )
 ```
 
@@ -108,12 +110,11 @@ SDK) or add an rpath the same way.
 ## Quick start
 
 ```swift
+import Foundation
 import SenzingSDK
 
-let settings = """
-    {"PIPELINE":{"CONFIGPATH":"/etc/opt/senzing","RESOURCEPATH":"/opt/senzing/er/resources",
-     "SUPPORTPATH":"/opt/senzing/data"},"SQL":{"CONNECTION":"sqlite3://na:na@/tmp/G2C.db"}}
-    """
+// The engine settings come from the environment, not the code.
+let settings = ProcessInfo.processInfo.environment["SENZING_ENGINE_CONFIGURATION_JSON"] ?? ""
 
 do {
     let environment = try SzCoreEnvironment(instanceName: "quick-start", settings: settings)
@@ -123,12 +124,12 @@ do {
     try engine.addRecord(
         dataSourceCode: "CUSTOMERS",
         recordID: "1001",
-        recordDefinition: #"{"NAME_FULL":"Robert Smith","DATE_OF_BIRTH":"12/11/1978"}"#
+        recordDefinition: #"{"NAME_FULL":"Robert Smith","DATE_OF_BIRTH":"1978-12-11"}"#
     )
     try engine.addRecord(
         dataSourceCode: "CUSTOMERS",
         recordID: "1002",
-        recordDefinition: #"{"NAME_FULL":"Bob Smith","DATE_OF_BIRTH":"11/12/1978"}"#
+        recordDefinition: #"{"NAME_FULL":"Bob Smith","DATE_OF_BIRTH":"1978-11-12"}"#
     )
 
     let entity = try engine.getEntity(dataSourceCode: "CUSTOMERS", recordID: "1001", as: SzEntityResponse.self)
@@ -139,6 +140,17 @@ do {
     print(error)  // SzError: kind, errorCode, message
 }
 ```
+
+`SENZING_ENGINE_CONFIGURATION_JSON` holds the engine settings. On Linux:
+
+```json
+{"PIPELINE":{"CONFIGPATH":"/etc/opt/senzing","RESOURCEPATH":"/opt/senzing/er/resources",
+ "SUPPORTPATH":"/opt/senzing/data"},"SQL":{"CONNECTION":"sqlite3://na:na@/tmp/G2C.db"}}
+```
+
+On macOS with the Homebrew cask, the same paths are under
+`$(brew --prefix)/opt/senzing`: `er/etc` (`CONFIGPATH`), `er/resources` and
+`data`.
 
 The repository needs its schema and a default configuration that registers
 `CUSTOMERS`; the [examples](Examples/README.md) and the tests create a fresh
@@ -154,7 +166,7 @@ SQLite repository that way.
 | `SzDiagnostic`, `SzProduct` | Repository diagnostics; version and license. |
 | `SzAsyncEngine` | Every engine method as `async`, on a fixed pool of worker threads. |
 | `SzLogging` | Native log callbacks, default output, format and level (`environment.getLogging()`). |
-| `SzFlags` | An `OptionSet` of every flag in `szflags.json`; each method defaults to its `...DefaultFlags`. |
+| `SzFlags` | An `OptionSet` of every flag in `szflags.json`; each method defaults to its `...DefaultFlags` (for getting started: production code should pass the flags it needs). |
 | `SzError`, `SzErrorKind` | Typed errors in the C# exception hierarchy, generated from `szerrors.json`. |
 
 Names follow the C# SDK in Swift form: `AddRecord` → `addRecord`,

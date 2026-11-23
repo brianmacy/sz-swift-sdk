@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- `SzAsyncEngine.processRedoRecords()` returns an `SzRedoReport` instead of a
+  count (breaking). A redo record that fails no longer stops the drain or is
+  lost: it is listed in `failed` with its error, for retry.
+- `SzCoreEnvironment.getActiveInstance()` called while `destroy()` is running
+  waits for it to finish and returns `nil`, instead of returning the
+  environment being destroyed.
+
+### Documentation
+
+- Install steps add `brew trust` for the Senzing tap; the quick start reads the
+  engine settings from `SENZING_ENGINE_CONFIGURATION_JSON` instead of
+  hard-coding paths; examples use ISO 8601 dates; the default flags are noted
+  as a starting point, not production settings.
+
 ## [0.1.0] - 2026-11-23
 
 First release. Requires Senzing 4.5 or later, installed separately.

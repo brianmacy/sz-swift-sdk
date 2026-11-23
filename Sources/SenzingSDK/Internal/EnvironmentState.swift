@@ -1,3 +1,5 @@
+import Foundation
+
 /// The lifecycle state an environment shares with its subsystems.
 ///
 /// Subsystems hold this object, not the environment, so there is no
@@ -12,6 +14,8 @@ final class EnvironmentState: @unchecked Sendable {
     private let workerPools = Locked<[WeakWorkerPool]?>([])
     /// Detects an engine call made from inside an engine call on one thread.
     private static let callDepth = ThreadDepth()
+    /// Held for the whole of ``destroy(_:)``, so callers can wait for it.
+    private let destroyGate = NSLock()
     /// A teardown requested from inside an SDK call, run when a call returns.
     private let deferredTeardown = Locked<(() -> Void)?>(nil)
 
@@ -78,6 +82,8 @@ final class EnvironmentState: @unchecked Sendable {
             deferredTeardown.withLock { $0 = teardown }
             return
         }
+        destroyGate.lock()
+        defer { destroyGate.unlock() }
         let pools = workerPools.withLock { pools in
             defer { pools = nil }
             return pools ?? []
@@ -94,6 +100,17 @@ final class EnvironmentState: @unchecked Sendable {
             teardown()
             destroyed = true
         }
+    }
+
+    /// Whether ``destroy(_:)`` has begun (it may still be running).
+    var isDestroyBegun: Bool {
+        workerPools.withLock { $0 == nil }
+    }
+
+    /// Waits until a running ``destroy(_:)`` has finished.
+    func waitForDestroy() {
+        destroyGate.lock()
+        destroyGate.unlock()
     }
 
     private func runDeferredTeardown() {
