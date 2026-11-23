@@ -99,4 +99,4 @@ jobs:
       - name: Build
         run: swift build --build-tests
       - name: Test (real engine)
-
+        run: swift test
