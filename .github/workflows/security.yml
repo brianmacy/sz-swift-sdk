@@ -39,7 +39,9 @@ jobs:
           languages: swift
           build-mode: manual
       - name: Build
-        run: swift build --build-tests
+        # Under the CodeQL build tracer, swift build defaults to x86_64; the
+        # Senzing cask ships an arm64-only libSz, so build for arm64 explicitly.
+        run: swift build --build-tests --triple arm64-apple-macosx15.0
       - uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
         with:
           category: /language:swift
