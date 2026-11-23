@@ -1,0 +1,23 @@
+# SwiftPM / Xcode
+.build/
+.swiftpm/
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+Package.resolved
+
+# Generated DocC site (published to GitHub Pages by CI)
+docs-site/
+*.doccarchive/
+
+# Coverage and test output
+*.profraw
+*.profdata
+coverage/
+
+# OS / editor
+.DS_Store
+*.swp
+
+# local Claude Code settings (machine-specific)
+.claude/settings.local.json

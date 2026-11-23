@@ -1,0 +1,9 @@
+// Module map over the C headers of an installed Senzing V4 runtime.
+//
+// The header directory (`<runtime>/er/sdk/c`) is put on the search path by
+// Package.swift; nothing from the runtime is vendored in this repository.
+module CSenzing [system] {
+    header "CSenzing.h"
+    link "Sz"
+    export *
+}

@@ -1,0 +1,108 @@
+# CI for sz-swift-sdk: lint, then build and run the real-engine test suite and
+# the example programs on Linux and macOS.
+#
+# The tests run against the REAL native Senzing engine (no mocks), so each job
+# installs a released Senzing runtime:
+#   * Linux: Senzing's production apt repository (tools/ci/install-senzing-apt.sh),
+#     pinned to SENZING_VERSION, inside the official Swift container.
+#   * macOS: the official Senzing Homebrew cask (its current release).
+#
+# Installing Senzing requires accepting the Senzing EULA
+# (https://senzing.com/end-user-license-agreement); running this workflow
+# constitutes that acceptance.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SENZING_VERSION: "4.5.0"
+
+jobs:
+  lint:
+    name: swift-format lint
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.4.2-noble@sha256:97b9d09f1e922ee794067ea8eec4874083c97d2d5027a6a409e398d82ebca016
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Toolchain
+        run: swift --version
+      - name: Lint
+        run: swift format lint --strict --recursive Package.swift Sources Tests Examples tools
+
+  test-linux:
+    name: Linux (Swift 6.4, Ubuntu 24.04)
+    runs-on: ubuntu-latest
+    needs: lint
+    container:
+      image: swift:6.4.2-noble@sha256:97b9d09f1e922ee794067ea8eec4874083c97d2d5027a6a409e398d82ebca016
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Senzing runtime
+        run: tools/ci/install-senzing-apt.sh
+      - name: Toolchain
+        run: swift --version
+      - name: Generated tables match the installed runtime
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          swift tools/generate-sdk-tables.swift /opt/senzing/er
+          git diff --exit-code -- Sources/SenzingSDK/Generated
+      - name: Build
+        run: swift build --build-tests
+      - name: Test (real engine)
+        run: swift test --enable-code-coverage
+      - name: Coverage
+        run: swift tools/coverage-summary.swift "$(swift test --show-codecov-path)" Sources/SenzingSDK/ 100
+      - name: Examples
+        run: |
+          for example in example_load_truthset example_search example_why example_async_engine; do
+            echo "::group::$example"
+            swift run "$example"
+            echo "::endgroup::"
+          done
+
+  test-macos:
+    name: macOS (Xcode toolchain)
+    runs-on: macos-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Senzing runtime
+        env:
+          HOMEBREW_SENZING_ACCEPT_EULA: i_accept_the_senzing_eula
+        run: |
+          brew tap senzing/senzingsdk https://github.com/Senzing/homebrew-senzingsdk
+          # Newer Homebrew refuses casks from a third-party tap until it is trusted.
+          brew trust --tap senzing/senzingsdk || true
+          brew install --cask senzingsdk
+          cat "$(brew --prefix)/opt/senzing/er/szBuildVersion.json"
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Build
+        run: swift build --build-tests
+      - name: Test (real engine)
+        run: swift test --enable-code-coverage
+      - name: Coverage
+        run: swift tools/coverage-summary.swift "$(swift test --show-codecov-path)" Sources/SenzingSDK/ 100
+      - name: Examples
+        run: |
+          for example in example_load_truthset example_search example_why example_async_engine; do
+            echo "::group::$example"
+            swift run "$example"
+            echo "::endgroup::"
+          done

@@ -1,0 +1,77 @@
+# Builds the DocC documentation and deploys it to GitHub Pages.
+#
+# Pages must be enabled for the repository with "GitHub Actions" as the source.
+# Building the symbol graph compiles the SDK, so the job installs the Senzing
+# runtime (for its C headers); see ci.yml for the EULA note.
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: swift:6.4.2-noble@sha256:97b9d09f1e922ee794067ea8eec4874083c97d2d5027a6a409e398d82ebca016
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Senzing runtime
+        run: tools/ci/install-senzing-apt.sh
+      - name: Symbol graph
+        run: |
+          swift build --target SenzingSDK \
+            -Xswiftc -emit-symbol-graph \
+            -Xswiftc -emit-symbol-graph-dir -Xswiftc "$PWD/.build/symbol-graphs" \
+            -Xswiftc -symbol-graph-minimum-access-level -Xswiftc public
+      - name: DocC (warnings are errors)
+        run: |
+          docc convert Sources/SenzingSDK/SenzingSDK.docc \
+            --additional-symbol-graph-dir .build/symbol-graphs \
+            --output-path docs-site \
+            --transform-for-static-hosting \
+            --hosting-base-path sz-swift-sdk \
+            --fallback-display-name SenzingSDK \
+            --fallback-bundle-identifier io.github.brianmacy.sz-swift-sdk \
+            --warnings-as-errors
+          # The site root redirects to the module's documentation.
+          cat > docs-site/index.html <<'HTML'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <title>SenzingSDK documentation</title>
+            <meta http-equiv="refresh" content="0; url=documentation/senzingsdk/">
+          </head>
+          <body><a href="documentation/senzingsdk/">SenzingSDK documentation</a></body>
+          </html>
+          HTML
+      - name: Upload Pages artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: docs-site
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
