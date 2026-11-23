@@ -14,6 +14,36 @@ func currentThreadToken() -> UInt {
     #endif
 }
 
+/// A thread-safe counter that closures and tasks can share.
+final class Counter: Sendable {
+    private let value = Atomic(0)
+
+    init() {}
+
+    var count: Int {
+        value.load(ordering: .relaxed)
+    }
+
+    func increment() {
+        value.add(1, ordering: .relaxed)
+    }
+}
+
+/// A thread-safe set of the OS threads that ran some code.
+final class ThreadSet: Sendable {
+    private let threads = Mutex<Set<UInt>>([])
+
+    init() {}
+
+    var all: Set<UInt> {
+        threads.withLock { $0 }
+    }
+
+    func insertCurrent() {
+        threads.withLock { _ = $0.insert(currentThreadToken()) }
+    }
+}
+
 /// A gate that holds a worker inside `perform` until the test opens it.
 final class Gate: Sendable {
     private let entered = DispatchSemaphore(value: 0)
@@ -205,14 +235,14 @@ extension EngineTests {
         func test_workers() async throws {
             let fixture = try EngineFixture(loadTruthset: true)
             let engine = SzAsyncEngine(fixture.engine, maxConcurrentCalls: 2)
-            let threads = Mutex<Set<UInt>>([])
+            let threads = ThreadSet()
             let caller = currentThreadToken()
             for round in 0..<3 {
                 try await withThrowingTaskGroup(of: Void.self) { group in
                     for _ in 0..<100 {
                         group.addTask {
                             try await engine.perform { engine in
-                                threads.withLock { _ = $0.insert(currentThreadToken()) }
+                                threads.insertCurrent()
                                 _ = try engine.getEntity(dataSourceCode: "CUSTOMERS", recordID: "1001")
                             }
                         }
@@ -223,7 +253,7 @@ extension EngineTests {
                     try await Task.sleep(for: .milliseconds(200))
                 }
             }
-            let used = threads.withLock { $0 }
+            let used = threads.all
             #expect(used.count == 2, "\(used.count) threads touched the engine")
             #expect(!used.contains(caller))
         }
@@ -232,12 +262,12 @@ extension EngineTests {
         func test_cancellation() async throws {
             let fixture = try EngineFixture()
             let engine = SzAsyncEngine(fixture.engine, maxConcurrentCalls: 1)
-            let reached = Atomic(0)
+            let reached = Counter()
             let gate = Gate()
             let blocker = Task { try await engine.perform { _ in gate.hold() } }
             await gate.waitUntilHeld()
 
-            let waiting = Task { try await engine.perform { _ in reached.add(1, ordering: .relaxed) } }
+            let waiting = Task { try await engine.perform { _ in reached.increment() } }
             try await eventually { engine.workers.pendingCount == 1 }
             waiting.cancel()
             await #expect(throws: CancellationError.self) { try await waiting.value }
@@ -245,14 +275,14 @@ extension EngineTests {
             // A task cancelled before it calls the engine.
             let early = Task {
                 withUnsafeCurrentTask { $0?.cancel() }
-                return try await engine.perform { _ in reached.add(1, ordering: .relaxed) }
+                return try await engine.perform { _ in reached.increment() }
             }
             await #expect(throws: CancellationError.self) { try await early.value }
 
             gate.open()
             try await blocker.value
             try await engine.perform { _ in }
-            #expect(reached.load(ordering: .relaxed) == 0)
+            #expect(reached.count == 0)
         }
 
         @Test("test_cancellation: a call a worker has started runs to completion and commits")
@@ -281,7 +311,7 @@ extension EngineTests {
             let fixture = try EngineFixture()
             let engine = SzAsyncEngine(fixture.engine, maxConcurrentCalls: 1)
             let second = SzAsyncEngine(fixture.engine, maxConcurrentCalls: 1)
-            let reached = Atomic(0)
+            let reached = Counter()
             let gate = Gate()
             let running = Task {
                 try await engine.perform { engine in
@@ -291,7 +321,7 @@ extension EngineTests {
             }
             await gate.waitUntilHeld()
             let queued = (0..<3).map { _ in
-                Task { try await engine.perform { _ in reached.add(1, ordering: .relaxed) } }
+                Task { try await engine.perform { _ in reached.increment() } }
             }
             try await eventually { engine.workers.pendingCount == 3 }
 
@@ -308,11 +338,11 @@ extension EngineTests {
             #expect(environment.isDestroyed)
 
             do {
-                try await engine.perform { _ in reached.add(1, ordering: .relaxed) }
+                try await engine.perform { _ in reached.increment() }
                 Issue.record("expected environmentDestroyed")
             } catch SzError.environmentDestroyed {
             }
-            #expect(reached.load(ordering: .relaxed) == 0)
+            #expect(reached.count == 0)
 
             // An SzAsyncEngine created after destroy is shut down at once.
             let late = SzAsyncEngine(fixture.engine)

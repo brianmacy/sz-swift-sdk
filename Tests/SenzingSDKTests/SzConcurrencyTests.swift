@@ -72,9 +72,13 @@ extension EngineTests {
                     var index = 0
                     while true {
                         do {
-                            let id = "R\(worker)-\(index)"
-                            try engine.addRecord(
-                                dataSourceCode: "CUSTOMERS", recordID: id, recordDefinition: person(id))
+                            // A few writes, then reads: the evaluation license caps
+                            // the record count.
+                            let id = "R\(worker)-\(min(index, 9))"
+                            if index < 10 {
+                                try engine.addRecord(
+                                    dataSourceCode: "CUSTOMERS", recordID: id, recordDefinition: person(id))
+                            }
                             _ = try engine.getRecord(dataSourceCode: "CUSTOMERS", recordID: id)
                             completed.add(1, ordering: .relaxed)
                             index += 1

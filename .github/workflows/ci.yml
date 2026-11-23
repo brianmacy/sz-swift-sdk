@@ -75,18 +75,23 @@ jobs:
             echo "::endgroup::"
           done
 
-  test-linux-tsan:
-    name: Linux (ThreadSanitizer)
-    runs-on: ubuntu-latest
+  test-macos-tsan:
+    name: macOS (ThreadSanitizer)
+    runs-on: macos-latest
     needs: lint
-    container:
-      image: swift:6.4.2-noble@sha256:97b9d09f1e922ee794067ea8eec4874083c97d2d5027a6a409e398d82ebca016
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Senzing runtime
-        run: tools/ci/install-senzing-apt.sh
+        env:
+          HOMEBREW_SENZING_ACCEPT_EULA: i_accept_the_senzing_eula
+        run: |
+          brew tap senzing/senzingsdk https://github.com/Senzing/homebrew-senzingsdk
+          brew trust --tap senzing/senzingsdk || true
+          brew install --cask senzingsdk
       # Checks the SDK's own locking (environment state, worker pool, logging
-      # slots); libSz itself is not instrumented.
+      # slots); libSz itself is not instrumented. macOS only: on Linux the
+      # runtime loads its database plugins with RTLD_DEEPBIND, which
+      # ThreadSanitizer cannot run with.
       - name: Test (real engine, ThreadSanitizer)
         run: swift test --sanitize=thread
 

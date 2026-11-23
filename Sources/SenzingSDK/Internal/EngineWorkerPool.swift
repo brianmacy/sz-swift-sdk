@@ -214,11 +214,7 @@ private final class WorkerContext {
     }
 
     private func run() {
-        #if canImport(Darwin)
-        pthread_setname_np(name)
-        #else
-        pthread_setname_np(pthread_self(), String(name.prefix(15)))
-        #endif
+        Thread.current.name = name
         pool.work()
     }
 }
