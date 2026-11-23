@@ -25,7 +25,8 @@ Senzing features, or private build information.
 | `Tests/SenzingTestSupport` | Repository provisioning, truth-set data (shared with examples). |
 | `Tests/SenzingSDKTests` | Swift Testing suites. |
 | `Examples/` | `example_*` executables. |
-| `tools/generate-sdk-tables.swift` | Code generator. |
+| `tools/generate-sdk-tables.swift` | Code generator: flags and error table. |
+| `tools/generate-async-engine.swift` | Code generator: `SzAsyncEngine`'s async mirror of `SzEngine`. Rerun after any `SzEngine` change. |
 
 ## Commands
 
@@ -52,6 +53,9 @@ Set `SENZING_DIR` to build against a runtime other than the default location.
   the last-exception state is per thread.
 - **Every native call runs inside `EnvironmentState.execute`** (shared lock);
   `destroy()` takes the lock exclusively. Never nest `execute`.
+- **`SzAsyncEngine` runs calls on its own pthread workers**, never GCD or the
+  cooperative pool: the engine keeps working state per OS thread. Its methods
+  are generated; edit `SzEngine`, then run `swift tools/generate-async-engine.swift`.
 - **`SzLogging` is the exception**: process-wide, outside any environment's
   lock and lifetime. Each registration's slot is native `user_data`; sink
   changes inside a callback throw `.configuration`. Logging tests change state

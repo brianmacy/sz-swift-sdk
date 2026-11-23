@@ -1,15 +1,14 @@
-import Dispatch
 import Foundation
+import Synchronization
 
-/// An actor that exposes ``SzEngine`` to Swift concurrency.
+/// ``SzEngine`` for Swift concurrency: every engine method as an `async`
+/// method that runs on a fixed pool of worker threads.
 ///
-/// Native engine calls block their thread, so they must not run on the main
-/// actor or on the cooperative thread pool. `SzAsyncEngine` runs each call on
-/// a dedicated concurrent dispatch queue and suspends the caller until it
-/// finishes. The actor bounds how many calls run at once
-/// (``maxConcurrentCalls``) and queues the rest in order, so firing thousands
-/// of tasks does not create thousands of threads. Calls run concurrently up
-/// to that bound: the native engine is thread-safe.
+/// The Senzing engine is synchronous: each call blocks its thread until it
+/// finishes. `SzAsyncEngine` is a Swift-only convenience, with no counterpart
+/// in the official Senzing SDKs, that keeps that blocking work off the main
+/// actor and off Swift's cooperative thread pool. `await` does not make a call
+/// faster or non-blocking.
 ///
 /// ```swift
 /// let engine = SzAsyncEngine(try environment.getEngine())
@@ -17,254 +16,117 @@ import Foundation
 /// let entity = try await engine.getEntity(dataSourceCode: "CUSTOMERS", recordID: "1001", as: SzEntityResponse.self)
 /// ```
 ///
-/// Any other engine method runs through ``perform(_:)``. A native call cannot
-/// be interrupted, so task cancellation takes effect only before a call starts.
-public actor SzAsyncEngine {
+/// ## Worker threads
+///
+/// The engine builds working state per OS thread on the thread's first call
+/// and releases it when the thread exits. `SzAsyncEngine` therefore creates
+/// ``maxConcurrentCalls`` long-lived worker threads once and runs every call
+/// on one of them, in submission order. At most that many calls run at once,
+/// in parallel inside the engine, which is thread-safe. The workers are joined
+/// when the environment is destroyed (before native teardown), on
+/// ``shutdown()``, or when the `SzAsyncEngine` is released.
+///
+/// ## Cancellation
+///
+/// A call whose task is cancelled before a worker picks it up throws
+/// `CancellationError` and never reaches the engine. A call a worker has
+/// started cannot be interrupted: it runs to completion, and its changes are
+/// committed.
+///
+/// ## Errors
+///
+/// The methods throw the engine's ``SzError``, `CancellationError`, or, after
+/// the environment is destroyed or ``shutdown()``, an ``SzError`` of kind
+/// ``SzErrorKind/environmentDestroyed`` or ``SzErrorKind/general``.
+/// `catch SzError.notFound`-style patterns work as for the synchronous API.
+///
+/// Every ``SzEngine`` method has an `async` counterpart here, generated from
+/// the ``SzEngine`` declarations by `tools/generate-async-engine.swift`. Any
+/// other work with the engine runs through ``perform(_:)``.
+public final class SzAsyncEngine: Sendable {
+    /// The default ``maxConcurrentCalls``: the active processor count, at most
+    /// 4.
+    ///
+    /// Each engine thread holds its own native working state (Senzing's
+    /// published guidance sizes it at 0.5–1 GB per engine thread), so the
+    /// default stays small enough for desktop and mobile memory. A server
+    /// loading data should raise it: Senzing's guidance for loading is 2–8
+    /// threads per CPU core, tuned to the storage. More threads do not raise
+    /// throughput on SQLite, which allows one writer at a time.
+    public static let defaultMaxConcurrentCalls = max(1, min(ProcessInfo.processInfo.activeProcessorCount, 4))
+
     /// The wrapped synchronous engine.
-    public nonisolated let engine: any SzEngine
-    /// The maximum number of native calls that run at the same time.
-    public nonisolated let maxConcurrentCalls: Int
+    public let engine: any SzEngine
+    /// The number of worker threads: the most calls that run at once.
+    public let maxConcurrentCalls: Int
 
-    private var running = 0
-    private var waiting: [CheckedContinuation<Void, Never>] = []
-    private nonisolated let queue = DispatchQueue(
-        label: "senzing.sz-swift-sdk.async-engine",
-        qos: .userInitiated,
-        attributes: .concurrent
-    )
+    let workers: EngineWorkerPool
 
-    /// Wraps an engine.
+    /// Wraps an engine and starts its worker threads.
     ///
     /// - Parameters:
     ///   - engine: The engine to run calls on.
-    ///   - maxConcurrentCalls: The bound on concurrent native calls; defaults
-    ///     to the number of active processors.
+    ///   - maxConcurrentCalls: The number of worker threads; defaults to
+    ///     ``defaultMaxConcurrentCalls``.
     public init(_ engine: any SzEngine, maxConcurrentCalls: Int? = nil) {
         self.engine = engine
-        self.maxConcurrentCalls = max(1, maxConcurrentCalls ?? ProcessInfo.processInfo.activeProcessorCount)
+        self.maxConcurrentCalls = max(1, maxConcurrentCalls ?? Self.defaultMaxConcurrentCalls)
+        workers = EngineWorkerPool(threadCount: self.maxConcurrentCalls, name: "sz-async-engine")
+        (engine as? SzCoreEngine)?.state.register(workers)
     }
 
-    /// Runs `operation` with the engine on the engine queue and returns its result.
+    deinit {
+        workers.shutdown(failing: Self.shutdownError)
+    }
+
+    /// Stops the worker threads: queued calls fail, running calls finish, and
+    /// the workers are joined before this returns. Later calls throw. The
+    /// environment's `destroy()` does this for you.
     ///
-    /// The operation's error type is preserved: annotate the closure with
-    /// `throws(SzError)` to keep typed errors, or let it infer `any Error`.
-    public func perform<T: Sendable, E: Error>(
-        _ operation: @escaping @Sendable (any SzEngine) throws(E) -> T
-    ) async throws(E) -> T {
-        await acquireSlot()
-        defer { releaseSlot() }
+    /// Blocks until the running calls finish. Idempotent.
+    public func shutdown() {
+        workers.shutdown(failing: Self.shutdownError)
+    }
+
+    /// Whether the workers are shut down (by ``shutdown()`` or the
+    /// environment's `destroy()`).
+    public var isShutDown: Bool {
+        workers.isShutDown
+    }
+
+    /// Runs `operation` with the engine on a worker thread and returns its
+    /// result.
+    ///
+    /// - Throws: What `operation` throws; `CancellationError` if the task is
+    ///   cancelled before a worker starts the call; an ``SzError`` once the
+    ///   workers are shut down.
+    @discardableResult
+    public func perform<T: Sendable>(
+        _ operation: @escaping @Sendable (any SzEngine) throws -> T
+    ) async throws -> T {
+        // An already-cancelled task runs onCancel before the operation, so
+        // its job is abandoned before a worker can claim it.
         let engine = self.engine
-        let result: Result<T, E> = await withCheckedContinuation { continuation in
-            queue.async {
-                continuation.resume(returning: Result { () throws(E) -> T in try operation(engine) })
+        let reply = Reply<T>()
+        let job = EngineJob(
+            work: { reply.deliver(Result { try operation(engine) }) },
+            abandon: { reply.deliver(.failure($0)) }
+        )
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                reply.wait(with: continuation)
+                workers.submit(job)
             }
-        }
-        return try result.get()
-    }
-
-    private func acquireSlot() async {
-        if running < maxConcurrentCalls {
-            running += 1
-            return
-        }
-        // The releasing call hands its slot over, so `running` is unchanged.
-        await withCheckedContinuation { waiting.append($0) }
-    }
-
-    private func releaseSlot() {
-        if waiting.isEmpty {
-            running -= 1
-        } else {
-            waiting.removeFirst().resume()
+        } onCancel: {
+            job.cancel()
         }
     }
 
-    // MARK: Records
-
-    /// Async ``SzEngine/addRecord(dataSourceCode:recordID:recordDefinition:flags:)``.
+    /// Processes pending redo records, on one worker, until none remain;
+    /// returns how many ran.
     @discardableResult
-    public func addRecord(
-        dataSourceCode: String,
-        recordID: String,
-        recordDefinition: String,
-        flags: SzFlags = .addRecordDefaultFlags
-    ) async throws(SzError) -> String? {
-        try await perform { (engine) throws(SzError) in
-            try engine.addRecord(
-                dataSourceCode: dataSourceCode,
-                recordID: recordID,
-                recordDefinition: recordDefinition,
-                flags: flags
-            )
-        }
-    }
-
-    /// Async ``SzEngine/addRecord(dataSourceCode:recordID:record:flags:)`` for an `Encodable` record.
-    @discardableResult
-    public func addRecord<Record: Encodable & Sendable>(
-        dataSourceCode: String,
-        recordID: String,
-        record: Record,
-        flags: SzFlags = .addRecordDefaultFlags
-    ) async throws(SzError) -> String? {
-        try await perform { (engine) throws(SzError) in
-            try engine.addRecord(dataSourceCode: dataSourceCode, recordID: recordID, record: record, flags: flags)
-        }
-    }
-
-    /// Async ``SzEngine/addRecord(dataSourceCode:recordID:recordDefinition:flags:as:)``.
-    public func addRecord<T: Decodable & Sendable>(
-        dataSourceCode: String,
-        recordID: String,
-        recordDefinition: String,
-        flags: SzFlags = .addRecordDefaultFlags,
-        as type: T.Type
-    ) async throws(SzError) -> T {
-        try await perform { (engine) throws(SzError) in
-            try engine.addRecord(
-                dataSourceCode: dataSourceCode,
-                recordID: recordID,
-                recordDefinition: recordDefinition,
-                flags: flags,
-                as: type
-            )
-        }
-    }
-
-    /// Async ``SzEngine/deleteRecord(dataSourceCode:recordID:flags:)``.
-    @discardableResult
-    public func deleteRecord(
-        dataSourceCode: String,
-        recordID: String,
-        flags: SzFlags = .deleteRecordDefaultFlags
-    ) async throws(SzError) -> String? {
-        try await perform { (engine) throws(SzError) in
-            try engine.deleteRecord(dataSourceCode: dataSourceCode, recordID: recordID, flags: flags)
-        }
-    }
-
-    /// Async ``SzEngine/getRecord(dataSourceCode:recordID:flags:)``.
-    public func getRecord(
-        dataSourceCode: String,
-        recordID: String,
-        flags: SzFlags = .recordDefaultFlags
-    ) async throws(SzError) -> String {
-        try await perform { (engine) throws(SzError) in
-            try engine.getRecord(dataSourceCode: dataSourceCode, recordID: recordID, flags: flags)
-        }
-    }
-
-    // MARK: Entities
-
-    /// Async ``SzEngine/getEntity(_:flags:)``.
-    public func getEntity(_ entityID: Int64, flags: SzFlags = .entityDefaultFlags) async throws(SzError) -> String {
-        try await perform { (engine) throws(SzError) in try engine.getEntity(entityID, flags: flags) }
-    }
-
-    /// Async ``SzEngine/getEntity(_:flags:as:)``.
-    public func getEntity<T: Decodable & Sendable>(
-        _ entityID: Int64,
-        flags: SzFlags = .entityDefaultFlags,
-        as type: T.Type
-    ) async throws(SzError) -> T {
-        try await perform { (engine) throws(SzError) in try engine.getEntity(entityID, flags: flags, as: type) }
-    }
-
-    /// Async ``SzEngine/getEntity(dataSourceCode:recordID:flags:)``.
-    public func getEntity(
-        dataSourceCode: String,
-        recordID: String,
-        flags: SzFlags = .entityDefaultFlags
-    ) async throws(SzError) -> String {
-        try await perform { (engine) throws(SzError) in
-            try engine.getEntity(dataSourceCode: dataSourceCode, recordID: recordID, flags: flags)
-        }
-    }
-
-    /// Async ``SzEngine/getEntity(dataSourceCode:recordID:flags:as:)``.
-    public func getEntity<T: Decodable & Sendable>(
-        dataSourceCode: String,
-        recordID: String,
-        flags: SzFlags = .entityDefaultFlags,
-        as type: T.Type
-    ) async throws(SzError) -> T {
-        try await perform { (engine) throws(SzError) in
-            try engine.getEntity(dataSourceCode: dataSourceCode, recordID: recordID, flags: flags, as: type)
-        }
-    }
-
-    // MARK: Search and why
-
-    /// Async ``SzEngine/searchByAttributes(_:searchProfile:flags:)``.
-    public func searchByAttributes(
-        _ attributes: String,
-        searchProfile: String? = nil,
-        flags: SzFlags = .searchByAttributesDefaultFlags
-    ) async throws(SzError) -> String {
-        try await perform { (engine) throws(SzError) in
-            try engine.searchByAttributes(attributes, searchProfile: searchProfile, flags: flags)
-        }
-    }
-
-    /// Async ``SzEngine/searchByAttributes(_:searchProfile:flags:as:)``.
-    public func searchByAttributes<T: Decodable & Sendable>(
-        _ attributes: String,
-        searchProfile: String? = nil,
-        flags: SzFlags = .searchByAttributesDefaultFlags,
-        as type: T.Type
-    ) async throws(SzError) -> T {
-        try await perform { (engine) throws(SzError) in
-            try engine.searchByAttributes(attributes, searchProfile: searchProfile, flags: flags, as: type)
-        }
-    }
-
-    /// Async ``SzEngine/whyEntities(entityID1:entityID2:flags:as:)``.
-    public func whyEntities<T: Decodable & Sendable>(
-        entityID1: Int64,
-        entityID2: Int64,
-        flags: SzFlags = .whyEntitiesDefaultFlags,
-        as type: T.Type
-    ) async throws(SzError) -> T {
-        try await perform { (engine) throws(SzError) in
-            try engine.whyEntities(entityID1: entityID1, entityID2: entityID2, flags: flags, as: type)
-        }
-    }
-
-    /// Async ``SzEngine/whyRecords(dataSourceCode1:recordID1:dataSourceCode2:recordID2:flags:as:)``.
-    public func whyRecords<T: Decodable & Sendable>(
-        dataSourceCode1: String,
-        recordID1: String,
-        dataSourceCode2: String,
-        recordID2: String,
-        flags: SzFlags = .whyRecordsDefaultFlags,
-        as type: T.Type
-    ) async throws(SzError) -> T {
-        try await perform { (engine) throws(SzError) in
-            try engine.whyRecords(
-                dataSourceCode1: dataSourceCode1,
-                recordID1: recordID1,
-                dataSourceCode2: dataSourceCode2,
-                recordID2: recordID2,
-                flags: flags,
-                as: type
-            )
-        }
-    }
-
-    // MARK: Export and redo
-
-    /// Async ``SzEngine/exportJsonEntityReport(flags:as:)``.
-    public func exportJsonEntityReport<T: Decodable & Sendable>(
-        flags: SzFlags = .exportDefaultFlags,
-        as type: T.Type
-    ) async throws(SzError) -> [T] {
-        try await perform { (engine) throws(SzError) in try engine.exportJsonEntityReport(flags: flags, as: type) }
-    }
-
-    /// Processes pending redo records until none remain; returns how many ran.
-    @discardableResult
-    public func processRedoRecords() async throws(SzError) -> Int {
-        try await perform { (engine) throws(SzError) -> Int in
+    public func processRedoRecords() async throws -> Int {
+        try await perform { engine in
             var processed = 0
             while let redo = try engine.getRedoRecord() {
                 try engine.processRedoRecord(redo, flags: [])
@@ -272,5 +134,42 @@ public actor SzAsyncEngine {
             }
             return processed
         }
+    }
+
+    static let shutdownError = SzError(.general, message: "The SzAsyncEngine has been shut down.")
+}
+
+/// Delivers a call's result to its continuation, whichever arrives first.
+private final class Reply<T: Sendable>: Sendable {
+    private enum State {
+        case empty
+        case waiting(CheckedContinuation<T, any Error>)
+        case delivered(Result<T, any Error>)
+    }
+
+    private let state = Mutex(State.empty)
+
+    func wait(with continuation: CheckedContinuation<T, any Error>) {
+        let early = state.withLock { state -> Result<T, any Error>? in
+            guard case .delivered(let result) = state else {
+                state = .waiting(continuation)
+                return nil
+            }
+            return result
+        }
+        if let early {
+            continuation.resume(with: early)
+        }
+    }
+
+    func deliver(_ result: Result<T, any Error>) {
+        let continuation = state.withLock { state -> CheckedContinuation<T, any Error>? in
+            guard case .waiting(let continuation) = state else {
+                state = .delivered(result)
+                return nil
+            }
+            return continuation
+        }
+        continuation?.resume(with: result)
     }
 }

@@ -5,20 +5,59 @@ Use the engine from many threads, or from Swift concurrency with
 
 ## Overview
 
-The native engine is thread-safe and the SDK's subsystems are `Sendable`, so
-one engine can serve many threads at once. There is one engine per process:
-only one ``SzCoreEnvironment`` may be active at a time.
+The Senzing engine is synchronous: each call blocks its thread until it
+finishes. It is also thread-safe, so one engine serves many threads at once,
+and the SDK's subsystems are `Sendable`.
 
-Engine calls block the calling thread until the engine finishes. Do not call
-them from the main actor, and avoid calling them from Swift concurrency's
-cooperative thread pool, which has one thread per core.
+`Sendable` means an object is safe to share across threads. It does not make
+concurrent writes to the same record deterministic: Senzing applies the last
+one.
 
-## SzAsyncEngine
+## Which API should I use?
 
-``SzAsyncEngine`` is an actor that runs each engine call on its own concurrent
-dispatch queue and suspends the caller until the call completes. It bounds how
-many native calls run at once (``SzAsyncEngine/maxConcurrentCalls``, by default
-the number of active processors) and queues the rest in order.
+| You are writing | Use |
+|---|---|
+| A command-line tool, a server, or code on threads you own | The synchronous ``SzEngine`` |
+| Swift concurrency code, SwiftUI, anything on the main actor | ``SzAsyncEngine`` |
+
+Never call the synchronous API on the main actor or from Swift concurrency's
+cooperative thread pool: a blocked thread there stalls the UI or other tasks.
+
+``SzAsyncEngine`` is a Swift-only convenience, with no counterpart in the
+official Senzing SDKs. `await` does not make a call faster or non-blocking: it
+keeps the blocking work off the main actor and the cooperative pool by running
+it on the SDK's own worker threads. Calls run in parallel inside the engine up
+to ``SzAsyncEngine/maxConcurrentCalls``; the worker pool only enforces that cap.
+
+## Threads and the engine
+
+Senzing's published threading guidance, which this SDK follows:
+
+- Create the environment once per process and share it across all threads.
+  Never create one per call or per thread. Only one ``SzCoreEnvironment`` may
+  be active at a time.
+- Load data through a pool of threads that share one engine. Senzing suggests
+  starting at 2–8 worker threads per CPU core and tuning to the storage's
+  throughput; loading from a single thread is slow.
+- Engine memory is native: about 4 GB per engine process plus 0.5–1 GB per
+  engine thread.
+
+The engine builds its working state per OS thread, on the thread's first engine
+call, and releases it when the thread exits. With the synchronous API, call the
+engine from long-lived threads you own and reuse, never from per-call threads or
+detached tasks, which rebuild that state each time.
+
+``SzAsyncEngine`` follows the same rule: it starts
+``SzAsyncEngine/maxConcurrentCalls`` worker threads once and runs every call on
+them, in submission order. The default,
+``SzAsyncEngine/defaultMaxConcurrentCalls``, is the processor count capped at 4,
+to bound per-thread memory on desktops and mobile devices. Raise it for server
+loads. More concurrency does not raise throughput on SQLite, which allows one
+writer at a time.
+
+Loading the same data concurrently can resolve entities and relationships
+slightly differently than loading it serially. That is expected engine
+behavior, not a bug.
 
 ```swift
 let engine = SzAsyncEngine(try environment.getEngine())
@@ -34,20 +73,36 @@ try await withThrowingTaskGroup(of: Void.self) { group in
 try await engine.processRedoRecords()
 ```
 
-Methods without an `async` variant run through ``SzAsyncEngine/perform(_:)``:
+Every ``SzEngine`` method has an `async` counterpart. Anything else runs on a
+worker through ``SzAsyncEngine/perform(_:)``:
 
 ```swift
-let stats = try await engine.perform { (engine) throws(SzError) -> String in
+let stats = try await engine.perform { engine in
     try engine.getStats()
 }
 ```
 
-A native call cannot be interrupted; task cancellation takes effect only
-before a call starts.
+## Cancellation
+
+A call whose task is cancelled before a worker starts it throws
+`CancellationError` and never reaches the engine. A call that has started
+cannot be interrupted: it runs to completion and its changes are committed.
 
 ## Lifecycle
 
-``SzEnvironment/destroy()`` waits for in-flight calls to finish, then releases
-the native engine. Later calls on any subsystem throw
+``SzEnvironment/destroy()`` first stops every ``SzAsyncEngine`` over the
+environment: queued calls fail with ``SzErrorKind/environmentDestroyed``,
+running calls finish, and the worker threads are joined, so their per-thread
+engine state is released. Then it waits for in-flight synchronous calls and
+releases the native engine. Later calls on any subsystem throw
 ``SzErrorKind/environmentDestroyed``. Releasing the last reference to an
-environment destroys it.
+environment destroys it. ``SzAsyncEngine/shutdown()`` stops one
+``SzAsyncEngine`` early.
+
+## Re-entrant calls
+
+Never call the SDK from a log callback. An SDK call made from inside another
+SDK call on the same thread (from a log callback, the only code that runs
+there) throws an ``SzError`` instead of deadlocking. ``SzEnvironment/destroy()``
+called there returns at once, and the environment is destroyed as soon as the
+running call returns.

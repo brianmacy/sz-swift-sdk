@@ -31,8 +31,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   registrations, `leak()`), the default callback, output (stderr, stdout,
   file, null), format and level, and `getEffectiveLogLevel()`. Example
   `example_logging`.
-- `SzAsyncEngine`: an actor with `async` engine calls that run on a dedicated
-  dispatch queue with bounded concurrency.
+- `SzAsyncEngine`: an `async` counterpart of every `SzEngine` method,
+  generated from the `SzEngine` declarations (`tools/generate-async-engine.swift`,
+  drift-checked in CI), run on a fixed pool of long-lived worker threads
+  (`maxConcurrentCalls`, default: processor count capped at 4). Calls
+  cancelled before they start throw `CancellationError`; started calls run to
+  completion. `destroy()` fails queued calls and joins the workers before
+  native teardown. Measured on Senzing 4.5.0 (macOS, Apple silicon, 4 bursts
+  of 400 `getEntity` calls 8 s apart, 8 concurrent calls): a GCD-queue design
+  touched 32 distinct OS threads, and the first call on each new thread took
+  a median 9.1 ms against 1.0 ms warm; the worker pool used exactly 8 threads, paid the
+  cold first call 8 times instead of 32, and ran warm calls at a median 0.95 ms.
+- SDK calls made from inside an SDK call on the same thread (from a log
+  callback) throw instead of deadlocking behind a waiting `destroy()`;
+  `destroy()` from there takes effect when the running call returns.
 - `tools/generate-sdk-tables.swift`: regenerates the flag and error tables
   from an installed runtime.
 - Swift Testing suite against the real engine (no mocks), an isolated SQLite

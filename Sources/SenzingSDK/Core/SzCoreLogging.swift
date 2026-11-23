@@ -192,21 +192,14 @@ final class SzCoreLogRegistration: SzLogRegistration {
 
 /// How deep the current thread is inside SDK log callbacks.
 enum LogCallbackDepth {
-    private static let key: pthread_key_t = {
-        var key = pthread_key_t()
-        pthread_key_create(&key, nil)
-        return key
-    }()
+    private static let depth = ThreadDepth()
 
     static var isInside: Bool {
-        pthread_getspecific(key) != nil
+        depth.isInside
     }
 
     static func during(_ body: () -> Void) {
-        let depth = Int(bitPattern: pthread_getspecific(key))
-        pthread_setspecific(key, UnsafeRawPointer(bitPattern: depth + 1))
-        defer { pthread_setspecific(key, UnsafeRawPointer(bitPattern: depth)) }
-        body()
+        depth.during(body)
     }
 
     static func refuseInside(_ operation: String) throws(SzError) {

@@ -169,6 +169,10 @@ public final class SzCoreEnvironment: SzEnvironment, @unchecked Sendable {
     }
 
     public func destroy() {
+        // Captures no `self`: destroy() also runs from deinit, and may be
+        // deferred to the end of an SDK call (see EnvironmentState.destroy).
+        let subsystems = self.subsystems
+        let identifier = ObjectIdentifier(self)
         state.destroy {
             subsystems.withLock { cache in
                 if cache.diagnostic != nil {
@@ -186,11 +190,10 @@ public final class SzCoreEnvironment: SzEnvironment, @unchecked Sendable {
                 }
                 cache = Subsystems()
             }
-        }
-        let identifier = ObjectIdentifier(self)
-        Self.activeInstance.withLock { active in
-            if active?.identifier == identifier {
-                active = nil
+            Self.activeInstance.withLock { active in
+                if active?.identifier == identifier {
+                    active = nil
+                }
             }
         }
     }

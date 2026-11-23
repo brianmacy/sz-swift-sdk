@@ -121,7 +121,7 @@ SQLite repository that way.
 | `SzEngine` | Records, entities, search, why/how, paths, networks, export, redo. |
 | `SzConfigManager`, `SzConfig` | Register data sources; manage and set the default configuration. |
 | `SzDiagnostic`, `SzProduct` | Repository diagnostics; version and license. |
-| `SzAsyncEngine` | An actor with `async` variants of the engine calls. |
+| `SzAsyncEngine` | Every engine method as `async`, on a fixed pool of worker threads. |
 | `SzLogging` | Native log callbacks, default output, format and level (`environment.getLogging()`). |
 | `SzFlags` | An `OptionSet` of every flag in `szflags.json`; each method defaults to its `...DefaultFlags`. |
 | `SzError`, `SzErrorKind` | Typed errors in the C# exception hierarchy, generated from `szerrors.json`. |
@@ -141,10 +141,26 @@ common calls also take `as:` to decode into the models in this package
 with `catch SzError.badInput` (which also catches `.notFound` and
 `.unknownDataSource`), or test `error.isKind(of:)`, `error.isRetryable`.
 
-**Concurrency.** The subsystems are `Sendable` and the native engine is
-thread-safe. Engine calls block their thread, so from the main actor or Swift
-concurrency use `SzAsyncEngine`, which runs calls on its own dispatch queue
-and bounds how many run at once:
+**Which API should I use?** The Senzing engine is synchronous and
+thread-safe: each call blocks its thread, and calls from many threads run in
+parallel.
+
+- CLI tools, servers, threads you own: the synchronous `SzEngine`. Call it
+  from long-lived threads you reuse; the engine builds working state per
+  thread, so per-call threads and detached tasks rebuild it each time.
+- Swift concurrency and SwiftUI: `SzAsyncEngine`. Never call the synchronous
+  API on the main actor or the cooperative thread pool.
+
+`SzAsyncEngine` is a Swift-only convenience with no counterpart in the
+official Senzing SDKs. `await` does not make calls faster or non-blocking: it
+runs them on a fixed pool of long-lived worker threads
+(`maxConcurrentCalls`, default: processor count capped at 4) so the blocking
+work stays off the main actor and the cooperative pool. Every `SzEngine`
+method has an `async` counterpart; a task cancelled before its call starts
+throws `CancellationError` and never reaches the engine, and a started call
+runs to completion. More concurrency does not raise throughput on SQLite (one
+writer at a time), and concurrent loading can resolve entities slightly
+differently than a serial load of the same data, as the engine does.
 
 ```swift
 let engine = SzAsyncEngine(try environment.getEngine())
