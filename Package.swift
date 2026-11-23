@@ -112,6 +112,12 @@ let package = Package(
             path: "Examples/AsyncEngine",
             swiftSettings: senzingSwiftSettings
         ),
+        .executableTarget(
+            name: "example_logging",
+            dependencies: ["SenzingSDK", "SenzingTestSupport"],
+            path: "Examples/Logging",
+            swiftSettings: senzingSwiftSettings
+        ),
     ],
     swiftLanguageModes: [.v6]
 )

@@ -26,6 +26,7 @@ separate Senzing installation, which has its own license terms.
 - <doc:GettingStarted>
 - <doc:ErrorHandling>
 - <doc:Concurrency>
+- <doc:Logging>
 - ``SzEnvironment``
 - ``SzCoreEnvironment``
 
@@ -37,6 +38,7 @@ separate Senzing installation, which has its own license terms.
 - ``SzDiagnostic``
 - ``SzProduct``
 - ``SzAsyncEngine``
+- ``SzLogging``
 
 ### Flags
 

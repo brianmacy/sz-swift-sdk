@@ -122,6 +122,7 @@ SQLite repository that way.
 | `SzConfigManager`, `SzConfig` | Register data sources; manage and set the default configuration. |
 | `SzDiagnostic`, `SzProduct` | Repository diagnostics; version and license. |
 | `SzAsyncEngine` | An actor with `async` variants of the engine calls. |
+| `SzLogging` | Native log callbacks, default output, format and level (`environment.getLogging()`). |
 | `SzFlags` | An `OptionSet` of every flag in `szflags.json`; each method defaults to its `...DefaultFlags`. |
 | `SzError`, `SzErrorKind` | Typed errors in the C# exception hierarchy, generated from `szerrors.json`. |
 
@@ -151,6 +152,18 @@ try await engine.addRecord(dataSourceCode: "CONTACTS", recordID: contact.id, rec
 let results = try await engine.searchByAttributes(query, as: SzSearchResponse.self)
 ```
 
+**Logging.** `environment.getLogging()` receives the engine's native log
+messages in a callback or redirects its default output. Register before the
+first `getEngine()` and unregister after `destroy()`:
+
+```swift
+let logging = environment.getLogging()
+let registration = try logging.registerCallback(minLevel: .warn) { record in
+    print("[\(record.level)] \(record.message)")
+}
+try logging.setDefaultOutput(.null)
+```
+
 ## Examples
 
 | Program | Shows |
@@ -159,6 +172,7 @@ let results = try await engine.searchByAttributes(query, as: SzSearchResponse.se
 | `example_search` | Search by attributes with an `Encodable` query; decoded results. |
 | `example_why` | Why two records resolved; why two entities are related. |
 | `example_async_engine` | Concurrent loading with `SzAsyncEngine` from a task group. |
+| `example_logging` | Capture native log messages with an `SzLogging` callback. |
 
 ```bash
 swift run example_load_truthset

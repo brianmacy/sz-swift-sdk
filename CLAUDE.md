@@ -52,6 +52,10 @@ Set `SENZING_DIR` to build against a runtime other than the default location.
   the last-exception state is per thread.
 - **Every native call runs inside `EnvironmentState.execute`** (shared lock);
   `destroy()` takes the lock exclusively. Never nest `execute`.
+- **`SzLogging` is the exception**: process-wide, outside any environment's
+  lock and lifetime. Each registration's slot is native `user_data`; sink
+  changes inside a callback throw `.configuration`. Logging tests change state
+  only while no engine is initialized and restore stderr/legacy/ERROR.
 - **Typed throws everywhere**: `throws(SzError)`. Closures passed to typed APIs
   need an explicit `throws(SzError)` annotation.
 - **Protocol defaults** live in `SzEngine+Defaults.swift` as same-signature

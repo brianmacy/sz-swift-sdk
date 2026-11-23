@@ -38,6 +38,7 @@ same; members use Swift naming.
 | `Destroy()` | `destroy()` |
 | `IsDestroyed()` | `isDestroyed` |
 | `SzCoreEnvironment.GetActiveInstance()` | `SzCoreEnvironment.getActiveInstance()` |
+| `GetLogging()` (C++/Rust SDKs) | `getLogging()` |
 
 ## SzEngine
 
@@ -104,6 +105,42 @@ same; members use Swift naming.
 | `GetFeature(featureID)` | `getFeature(featureID:)` |
 | `GetLicense()` | `getLicense()`; also `as:` |
 | `GetVersion()` | `getVersion()`; also `as:` |
+
+## SzLogging
+
+The C# SDK has no logging API. `SzLogging` follows the Senzing C++ and Rust
+SDKs (C# naming) over the 4.5 `libSzLogging.h` C API.
+
+| C++ SDK | Swift | C API |
+|---|---|---|
+| `SzCoreLogging::GetInstance()` | `SzCoreLogging.getInstance()` | |
+| `RegisterCallback(options, callback)` | `registerCallback(_:_:)`, `registerCallback(minLevel:_:)` | `SzLogging_registerCallbackWithFormat` |
+| `SetDefaultCallback(options, callback)` | `setDefaultCallback(_:_:)` | `SzLogging_setDefaultCallback` (+ `SzLogging_setDefaultFormatter`) |
+| `SetDefaultOutput(output)` | `setDefaultOutput(_:)` | `SzLogging_setDefaultOutput` |
+| `SetDefaultFormat(format)` | `setDefaultFormat(_:)` | `SzLogging_setDefaultFormatter` |
+| `SetDefaultLogLevel(level)` | `setDefaultLogLevel(_:)` | `SzLogging_setLogLevel` |
+| `GetEffectiveLogLevel()` | `getEffectiveLogLevel()` | `SzLogging_getLogLevel` |
+| `SzLogRegistration::Unregister()` / `Leak()` | `unregister()` / `leak()`; released = unregistered | `SzLogging_unregisterCallback` |
+| `SzLogLevel`, `SzLogFormat`, `SzLogOutputType` | enums of the same names; `init(parsing:)`, `description` | |
+| `SzLogOutput::Stderr()` ... `File(path)` | `SzLogOutput.stderr` ... `.file(path)` | |
+| `SzLogCallbackOptions(minLevel).WithFormat(f)` | `SzLogCallbackOptions(minLevel:format:)`, `withFormat(_:)` | |
+| `SzLogRecord` / `SzLogEntry` | `SzLogRecord` (an owned value) | |
+
+Not wrapped: `SzLogging_registerThreadLocalCallback` (the 4.5 runtime accepts
+the registration but delivers no messages) and `SzLogging_registerCallback`
+(the legacy-format form of `registerCallbackWithFormat`).
+
+## C API coverage
+
+Every function in the 4.5 headers is wrapped except these, which the C++ and
+Rust SDKs do not wrap either:
+
+- `Sz_setBundleArchive`, `Sz_setBundleArchiveFromMemory` (`libSz.h`).
+- `SzProduct_validateLicenseFile`, `SzProduct_validateLicenseStringBase64`
+  (`libSzProduct.h`) and their helpers.
+- The non-`_V2` engine helpers, superseded by the `_V2` forms the SDK calls.
+- `libSzEngineFlags.h` and `libSzEngineFlagGroups.h`: the same flags as
+  `szflags.json`, from which `SzFlags` is generated.
 
 ## Swift additions
 

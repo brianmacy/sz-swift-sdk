@@ -25,6 +25,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `SzSearchResponse`, `SzWhyResponse`, `SzWithInfoResponse`, `SzVersionInfo`,
   `SzLicenseInfo`, `SzConfigRegistry`, `SzDataSourceRegistry`), `as:` variants
   of the common calls, and `addRecord` for any `Encodable` record.
+- `SzLogging` over the `libSzLogging.h` C API, following the Senzing C++ and
+  Rust SDKs: `environment.getLogging()` / `SzCoreLogging.getInstance()`,
+  process-wide callbacks (`registerCallback`, released or `unregister()`ed
+  registrations, `leak()`), the default callback, output (stderr, stdout,
+  file, null), format and level, and `getEffectiveLogLevel()`. Example
+  `example_logging`.
 - `SzAsyncEngine`: an actor with `async` engine calls that run on a dedicated
   dispatch queue with bounded concurrency.
 - `tools/generate-sdk-tables.swift`: regenerates the flag and error tables

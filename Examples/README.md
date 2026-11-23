@@ -9,12 +9,14 @@ exits non-zero if anything fails or the result is wrong.
 | `example_search` | [Search](Search/main.swift) | Search by attributes built from an `Encodable` value; decode `SzSearchResponse`. |
 | `example_why` | [Why](Why/main.swift) | `whyRecords`, `whyEntities` and `howEntity`, decoded into `SzWhyResponse`. |
 | `example_async_engine` | [AsyncEngine](AsyncEngine/main.swift) | Concurrent `Encodable` contacts through `SzAsyncEngine` in a task group. |
+| `example_logging` | [Logging](Logging/main.swift) | Capture native log messages with an `SzLogging` callback registered before the engine starts. |
 
 ```bash
 swift run example_load_truthset
 swift run example_search
 swift run example_why
 swift run example_async_engine
+swift run example_logging
 ```
 
 ## The repository they use

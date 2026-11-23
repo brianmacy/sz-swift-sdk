@@ -68,7 +68,7 @@ jobs:
         run: swift tools/coverage-summary.swift "$(swift test --show-codecov-path)" Sources/SenzingSDK/ 100
       - name: Examples
         run: |
-          for example in example_load_truthset example_search example_why example_async_engine; do
+          for example in example_load_truthset example_search example_why example_async_engine example_logging; do
             echo "::group::$example"
             swift run "$example"
             echo "::endgroup::"
@@ -101,7 +101,7 @@ jobs:
         run: swift tools/coverage-summary.swift "$(swift test --show-codecov-path)" Sources/SenzingSDK/ 100
       - name: Examples
         run: |
-          for example in example_load_truthset example_search example_why example_async_engine; do
+          for example in example_load_truthset example_search example_why example_async_engine example_logging; do
             echo "::group::$example"
             swift run "$example"
             echo "::endgroup::"

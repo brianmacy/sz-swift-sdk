@@ -1,7 +1,8 @@
 // Umbrella header for the Senzing V4 C API (Senzing 4.5 or later).
 //
 // The classic per-subsystem headers provide init/destroy/reinit, the
-// last-exception accessors and SzProduct_getVersion/getLicense. The helper
+// last-exception accessors and SzProduct_getVersion/getLicense; libSzLogging.h
+// provides the process-wide logging callbacks and default sink. The helper
 // header provides the struct-returning `*_helper` functions, whose response
 // buffers are released with SzHelper_free.
 #ifndef CSENZING_H
@@ -11,6 +12,7 @@
 #include <libSzConfig.h>
 #include <libSzConfigMgr.h>
 #include <libSzDiagnostic.h>
+#include <libSzLogging.h>
 #include <libSzProduct.h>
 #include <szhelpers/SzLang_helpers.h>
 

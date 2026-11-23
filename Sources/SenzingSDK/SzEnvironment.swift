@@ -19,6 +19,13 @@ public protocol SzEnvironment: AnyObject, Sendable {
     /// Returns the diagnostic subsystem.
     func getDiagnostic() throws(SzError) -> any SzDiagnostic
 
+    /// Returns the process-wide logging controls.
+    ///
+    /// Logging is not tied to the environment's lifetime: it works before the
+    /// first subsystem is initialized and after ``destroy()``, so log
+    /// callbacks can be installed before the engine starts.
+    func getLogging() -> any SzLogging
+
     /// Returns the ID of the configuration the engine is using.
     func getActiveConfigID() throws(SzError) -> Int64
 

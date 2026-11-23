@@ -140,6 +140,10 @@ public final class SzCoreEnvironment: SzEnvironment, @unchecked Sendable {
         }
     }
 
+    public func getLogging() -> any SzLogging {
+        SzCoreLogging.getInstance()
+    }
+
     public func getActiveConfigID() throws(SzError) -> Int64 {
         _ = try coreEngine()
         return try state.execute { () throws(SzError) -> Int64 in
