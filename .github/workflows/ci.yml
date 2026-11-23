@@ -66,7 +66,7 @@ jobs:
       - name: Build
         run: swift build --build-tests
       - name: Test (real engine)
-
+        run: swift test --enable-code-coverage
       - name: Coverage
         run: swift tools/coverage-summary.swift "$(swift test --show-codecov-path)" Sources/SenzingSDK/ 100
       - name: Examples

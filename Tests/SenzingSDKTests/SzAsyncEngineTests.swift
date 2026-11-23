@@ -110,6 +110,21 @@ extension EngineTests {
             #expect(total == records.count)
         }
 
+        @Test("test_processRedoRecords drains the pending redo records")
+        func test_processRedoRecords() async throws {
+            let fixture = try EngineFixture()
+            for record in try Truthset.allRecords() {
+                try fixture.engine.addRecord(
+                    dataSourceCode: record.dataSourceCode, recordID: record.recordID,
+                    recordDefinition: record.definition)
+            }
+            let pending = try fixture.engine.countRedoRecords()
+            #expect(pending > 0, "a serial truth-set load leaves redo records")
+            let engine = SzAsyncEngine(fixture.engine)
+            #expect(try await engine.processRedoRecords() >= Int(pending))
+            #expect(try fixture.engine.countRedoRecords() == 0)
+        }
+
         @Test("test_records: every async record method matches the engine")
         func test_records() async throws {
             let fixture = try EngineFixture(loadTruthset: true)
